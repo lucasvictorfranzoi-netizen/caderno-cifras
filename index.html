@@ -1,0 +1,1669 @@
+<!DOCTYPE html>
+<!--
+  Caderno de Cifras — v0.4.0 (jul/2026)
+  Arquitetura correta: frontend estático (este arquivo, no GitHub Pages) sem nenhum
+  segredo + backend Supabase com login de verdade (e-mail/senha do professor).
+  Autorização no servidor via RLS travada na lista de editores (supabase-setup.sql):
+  todo mundo lê, só o professor escreve — mesmo que o cadastro público fique ligado
+  por engano, contas estranhas não conseguem escrever nada.
+  Sem configurar o CONFIG abaixo, roda em Modo Demonstração (dados locais).
+-->
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Caderno de Cifras</title>
+<meta name="description" content="Cifras, batidas, riffs e solos das aulas de violão e guitarra.">
+<meta name="theme-color" content="#171310">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; media-src 'self' data: blob: https://*.supabase.co; connect-src 'self' https://*.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
+<style>
+/* ============ Tokens — "braço de jacarandá, cordas de latão" ============ */
+:root{
+  --bg:#171310;            /* jacarandá escuro */
+  --surface:#201a15;
+  --raised:#2a221b;
+  --line:#3a2f24;
+  --line-soft:#2e2620;
+  --brass:#d9a441;         /* latão */
+  --brass-bright:#f0bd5e;
+  --brass-dim:#9c7a3a;
+  --ivory:#f3ead9;         /* madrepérola/ivory */
+  --muted:#a8977f;
+  --faint:#7a6c58;
+  --ok:#8fb87a;
+  --danger:#d96a5b;
+  --danger-soft:#4a2721;
+  --shadow:0 10px 30px rgba(0,0,0,.45);
+  --radius:14px;
+  --radius-sm:9px;
+  --cifra-size:15px;
+  --mono:ui-monospace,'SF Mono','Cascadia Mono','Roboto Mono','JetBrains Mono',Menlo,Consolas,monospace;
+  --display:'Bricolage Grotesque',system-ui,sans-serif;
+  --body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg);
+  color:var(--ivory);
+  font-family:var(--body);
+  font-size:16px;
+  line-height:1.5;
+  min-height:100dvh;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+::selection{background:var(--brass);color:#1b150e}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input,textarea,select{font:inherit;color:var(--ivory)}
+a{color:var(--brass-bright)}
+:focus-visible{outline:2px solid var(--brass-bright);outline-offset:2px;border-radius:6px}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}
+}
+
+/* ============ Topbar ============ */
+#topbar{
+  position:sticky;top:0;z-index:40;
+  display:flex;align-items:center;gap:10px;
+  padding:calc(10px + env(safe-area-inset-top)) 14px 10px;
+  background:linear-gradient(180deg,rgba(23,19,16,.97),rgba(23,19,16,.88));
+  backdrop-filter:blur(8px);
+  border-bottom:1px solid var(--line-soft);
+}
+#topbar .brand{
+  display:flex;align-items:center;gap:10px;flex:1;min-width:0;
+  text-align:left;
+}
+#topbar .brand svg{flex:none}
+#topbar .brand .t{
+  font-family:var(--display);font-weight:800;font-size:18px;letter-spacing:.2px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+#topbar .brand .s{display:block;font-family:var(--body);font-weight:400;font-size:11px;color:var(--muted);letter-spacing:.4px}
+.iconbtn{
+  width:40px;height:40px;flex:none;border-radius:12px;
+  display:grid;place-items:center;color:var(--muted);
+  transition:background .15s,color .15s;
+}
+.iconbtn:hover,.iconbtn:active{background:var(--raised);color:var(--ivory)}
+
+/* ============ Layout ============ */
+#view{max-width:760px;margin:0 auto;padding:16px 14px 120px}
+.eyebrow{
+  font-size:11px;font-weight:600;letter-spacing:1.6px;text-transform:uppercase;
+  color:var(--brass);margin-bottom:6px;
+}
+h1.page{font-family:var(--display);font-weight:800;font-size:26px;line-height:1.15;margin-bottom:4px}
+.sub{color:var(--muted);font-size:14px}
+
+/* divisor "corda" */
+.string-rule{
+  height:2px;border:0;margin:18px 0;
+  background:linear-gradient(90deg,transparent,var(--brass-dim) 18%,var(--brass) 50%,var(--brass-dim) 82%,transparent);
+  opacity:.55;border-radius:2px;
+}
+
+/* ============ Busca ============ */
+.search{
+  display:flex;align-items:center;gap:10px;
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius);padding:12px 14px;margin:14px 0 18px;
+  transition:border-color .15s;
+}
+.search:focus-within{border-color:var(--brass-dim)}
+.search svg{flex:none;color:var(--faint)}
+.search input{flex:1;background:none;border:0;outline:0;font-size:16px}
+.search input::placeholder{color:var(--faint)}
+
+/* ============ Lista de músicas ============ */
+.songrow{
+  display:flex;align-items:center;gap:14px;width:100%;
+  padding:14px 12px;border-radius:var(--radius);
+  border:1px solid transparent;text-align:left;
+  transition:background .15s,border-color .15s;
+}
+.songrow:hover,.songrow:active{background:var(--surface);border-color:var(--line-soft)}
+.songrow .dot{
+  width:12px;height:12px;flex:none;border-radius:50%;
+  background:radial-gradient(circle at 35% 30%,#fff8e8,var(--brass) 55%,#6e5526 100%);
+  box-shadow:0 1px 3px rgba(0,0,0,.6);
+}
+.songrow .info{flex:1;min-width:0}
+.songrow .title{font-family:var(--display);font-weight:700;font-size:17px;line-height:1.25}
+.songrow .meta{font-size:13px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.songrow .chev{color:var(--faint);flex:none}
+.badge{
+  display:inline-block;font-size:11px;font-weight:600;letter-spacing:.5px;
+  padding:2px 8px;border-radius:999px;border:1px solid var(--line);
+  color:var(--muted);vertical-align:middle;
+}
+.badge.b-iniciante{color:var(--ok);border-color:rgba(143,184,122,.4)}
+.badge.b-intermediário,.badge.b-intermediario{color:var(--brass-bright);border-color:var(--brass-dim)}
+.badge.b-avançado,.badge.b-avancado{color:var(--danger);border-color:rgba(217,106,91,.45)}
+
+.empty{
+  text-align:center;padding:52px 20px;color:var(--muted);
+}
+.empty .big{font-family:var(--display);font-weight:700;font-size:19px;color:var(--ivory);margin-bottom:6px}
+
+/* ============ Página da música ============ */
+.song-head{padding:6px 2px 2px}
+.song-head h1{font-family:var(--display);font-weight:800;font-size:27px;line-height:1.12}
+.song-head .artist{color:var(--muted);font-size:15px;margin-top:3px}
+.song-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.chip{
+  font-size:12.5px;font-weight:600;color:var(--muted);
+  background:var(--surface);border:1px solid var(--line);
+  border-radius:999px;padding:5px 12px;
+}
+.chip b{color:var(--brass-bright);font-weight:700}
+
+/* barra de ferramentas fixa da música */
+.songbar{
+  position:sticky;top:calc(60px + env(safe-area-inset-top));z-index:30;
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  background:rgba(32,26,21,.96);backdrop-filter:blur(8px);
+  border:1px solid var(--line);border-radius:var(--radius);
+  padding:8px;margin:16px 0;
+}
+.songbar .grp{display:flex;align-items:center;gap:2px;background:var(--bg);border-radius:10px;padding:2px}
+.songbar .grp .lbl{font-size:11.5px;color:var(--faint);padding:0 6px;letter-spacing:.4px}
+.tbtn{
+  min-width:38px;height:36px;padding:0 10px;border-radius:8px;
+  display:grid;place-items:center;font-weight:700;font-size:14px;color:var(--ivory);
+  transition:background .15s;
+}
+.tbtn:hover,.tbtn:active{background:var(--raised)}
+.tbtn.on{background:var(--brass);color:#1b150e}
+.tbtn .tom{color:var(--brass-bright);font-family:var(--mono)}
+.tbtn.on .tom{color:#1b150e}
+
+/* blocos */
+.block{margin:22px 0}
+.block-h{
+  display:flex;align-items:center;gap:10px;margin-bottom:10px;
+}
+.block-h .tag{
+  font-size:10.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
+  color:var(--brass);
+}
+.block-h .name{font-family:var(--display);font-weight:700;font-size:16px}
+.block-h::after{
+  content:"";flex:1;height:1px;
+  background:linear-gradient(90deg,var(--line),transparent);
+}
+
+/* cifra */
+.cifra{
+  font-family:var(--mono);font-size:var(--cifra-size);line-height:1.45;
+  overflow-x:auto;padding:2px 0 6px;
+  -webkit-overflow-scrolling:touch;
+}
+.cifra .ln{white-space:pre;min-height:1.2em}
+.cifra .ln.chords-only{margin:4px 0}
+.chordtxt{
+  color:var(--brass-bright);font-weight:700;cursor:pointer;
+  border-bottom:1px dotted var(--brass-dim);
+}
+.chordtxt:hover{color:#ffd98a}
+
+/* tablatura */
+pre.tab{
+  font-family:var(--mono);font-size:calc(var(--cifra-size) - 1px);line-height:1.4;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-sm);
+  padding:12px;overflow-x:auto;color:#e9dfcb;
+  -webkit-overflow-scrolling:touch;
+}
+
+/* batida (assinatura visual) */
+.strum{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px 12px 12px;
+}
+.strum-lane{
+  position:relative;display:flex;gap:4px;align-items:stretch;
+  padding:6px 2px 2px;overflow-x:auto;-webkit-overflow-scrolling:touch;
+}
+.strum-lane::before{
+  content:"";position:absolute;left:0;right:0;top:50%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--brass-dim),transparent);opacity:.5;
+}
+.beat{
+  flex:1;min-width:34px;height:64px;position:relative;
+  display:grid;place-items:center;border-radius:8px;
+}
+.beat .sym{font-size:30px;line-height:1;font-weight:700}
+.beat.d .sym{color:var(--brass-bright)}
+.beat.u .sym{color:var(--ivory)}
+.beat.x .sym{color:var(--muted);font-size:24px}
+.beat.r .sym{color:var(--faint);font-size:20px}
+.beat .n{position:absolute;bottom:2px;font-size:10px;color:var(--faint);font-family:var(--mono)}
+.beat.group-start{border-left:1px solid var(--line-soft)}
+.strum-foot{display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap}
+.strum-foot .bpm{font-size:12.5px;color:var(--muted)}
+.strum-foot .bpm b{color:var(--brass-bright);font-family:var(--mono)}
+
+/* nota */
+.note{
+  border-left:3px solid var(--brass);background:var(--surface);
+  border-radius:0 var(--radius-sm) var(--radius-sm) 0;
+  padding:12px 14px;color:#e6dcc8;font-size:14.5px;
+}
+
+/* áudio */
+audio.player{width:100%;margin-top:10px;height:40px;border-radius:10px}
+
+/* auto-scroll flutuante */
+#floatbar{
+  position:fixed;right:14px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:45;
+  display:flex;align-items:center;gap:8px;
+}
+#floatbar .speed{display:none;align-items:center;gap:4px;background:var(--raised);border:1px solid var(--line);border-radius:999px;padding:4px}
+#floatbar.scrolling .speed{display:flex}
+#floatbar .speed button{width:34px;height:34px;border-radius:50%;font-weight:800;color:var(--ivory)}
+#floatbar .speed span{font-size:12px;color:var(--muted);min-width:26px;text-align:center;font-family:var(--mono)}
+.fab{
+  width:54px;height:54px;border-radius:50%;
+  background:var(--brass);color:#1b150e;box-shadow:var(--shadow);
+  display:grid;place-items:center;
+  transition:transform .12s;
+}
+.fab:active{transform:scale(.94)}
+.fab.secondary{background:var(--raised);color:var(--ivory);border:1px solid var(--line)}
+
+/* ============ Botões ============ */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:46px;padding:0 20px;border-radius:12px;
+  font-weight:700;font-size:15px;
+  background:var(--brass);color:#1b150e;
+  transition:filter .15s,transform .1s;
+}
+.btn:hover{filter:brightness(1.07)}
+.btn:active{transform:scale(.98)}
+.btn.ghost{background:var(--surface);color:var(--ivory);border:1px solid var(--line)}
+.btn.danger{background:var(--danger-soft);color:#f3b3a9;border:1px solid rgba(217,106,91,.4)}
+.btn.small{min-height:38px;padding:0 14px;font-size:13.5px;border-radius:10px}
+.btn.block{width:100%}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+
+/* ============ Formulários / Editor ============ */
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;font-weight:600;color:var(--muted);letter-spacing:.4px;margin-bottom:6px}
+.input,select.input,textarea.input{
+  width:100%;background:var(--surface);border:1px solid var(--line);
+  border-radius:var(--radius-sm);padding:12px 13px;font-size:16px;outline:0;
+  transition:border-color .15s;
+}
+.input:focus{border-color:var(--brass-dim)}
+textarea.input{font-family:var(--mono);font-size:14px;line-height:1.5;min-height:130px;resize:vertical;white-space:pre;overflow-x:auto}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+
+.edblock{
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+  padding:14px;margin-bottom:14px;
+}
+.edblock .edhead{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+.edblock .edhead .tag{
+  font-size:10.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--brass);
+  flex:1;
+}
+.edblock .edhead .mv{
+  width:34px;height:34px;border-radius:8px;display:grid;place-items:center;
+  color:var(--muted);background:var(--bg);
+}
+.edblock .edhead .mv:hover{color:var(--ivory)}
+.edblock .edhead .mv.del:hover{color:var(--danger)}
+
+.palette{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 10px}
+.palette .pc{
+  font-family:var(--mono);font-weight:700;font-size:13px;
+  background:var(--bg);border:1px solid var(--line);color:var(--brass-bright);
+  border-radius:8px;padding:6px 10px;
+}
+.palette .pc:active{background:var(--raised)}
+.palette .pc.util{color:var(--muted);font-family:var(--body);font-weight:600}
+
+.addmenu{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+.addmenu button{
+  background:var(--surface);border:1px dashed var(--line);border-radius:var(--radius);
+  padding:16px 10px;text-align:center;color:var(--muted);font-weight:600;font-size:14px;
+  transition:border-color .15s,color .15s;
+}
+.addmenu button:hover{border-color:var(--brass-dim);color:var(--ivory)}
+.addmenu button .big{display:block;font-size:22px;margin-bottom:4px;color:var(--brass)}
+
+/* editor de batida */
+.strum-editor .beats{display:flex;gap:4px;overflow-x:auto;padding:4px 0}
+.strum-editor .bslot{
+  flex:1;min-width:38px;height:64px;border-radius:8px;
+  background:var(--bg);border:1px solid var(--line);
+  display:grid;place-items:center;font-size:26px;font-weight:700;
+  color:var(--faint);transition:border-color .1s;
+}
+.strum-editor .bslot.d{color:var(--brass-bright);border-color:var(--brass-dim)}
+.strum-editor .bslot.u{color:var(--ivory);border-color:var(--line)}
+.strum-editor .bslot.x{color:var(--muted)}
+.strum-editor .hint{font-size:12px;color:var(--faint);margin-top:8px}
+
+/* gravador */
+.rec-ui{text-align:center;padding:8px 0}
+.rec-ui .time{font-family:var(--mono);font-size:30px;font-weight:700;margin:10px 0;color:var(--ivory)}
+.rec-ui .time.live{color:var(--danger)}
+.recdot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--danger);margin-right:8px;animation:pulse 1.1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ============ Modais (bottom-sheet) ============ */
+#modal-root:empty{display:none}
+.modal-back{
+  position:fixed;inset:0;z-index:60;background:rgba(10,8,6,.66);
+  display:flex;align-items:flex-end;justify-content:center;
+  animation:fadein .18s;
+}
+@keyframes fadein{from{opacity:0}to{opacity:1}}
+.sheet{
+  width:100%;max-width:560px;max-height:88dvh;overflow-y:auto;
+  background:var(--surface);border:1px solid var(--line);border-bottom:0;
+  border-radius:20px 20px 0 0;padding:18px 18px calc(22px + env(safe-area-inset-bottom));
+  animation:slideup .22s cubic-bezier(.2,.8,.3,1);
+}
+@keyframes slideup{from{transform:translateY(40px);opacity:.4}to{transform:translateY(0);opacity:1}}
+@media(min-width:600px){
+  .modal-back{align-items:center;padding:20px}
+  .sheet{border-radius:20px;border-bottom:1px solid var(--line)}
+}
+.sheet .grab{width:42px;height:4px;border-radius:4px;background:var(--line);margin:0 auto 14px}
+.sheet h2{font-family:var(--display);font-weight:700;font-size:19px;margin-bottom:12px}
+.sheet .actions{display:flex;gap:10px;margin-top:18px}
+.sheet .actions .btn{flex:1}
+
+/* diagrama de acorde */
+.diagram-wrap{text-align:center;padding:6px 0 2px}
+.diagram-wrap .cname{font-family:var(--display);font-weight:800;font-size:30px;color:var(--brass-bright)}
+.diagram-wrap .cbass{font-size:13px;color:var(--muted);margin-top:2px}
+.diagram-wrap svg{margin-top:10px}
+.diagram-wrap .nodiag{color:var(--muted);padding:26px 10px;font-size:14.5px}
+
+/* ============ Toast / banner ============ */
+#toast-root{position:fixed;left:0;right:0;bottom:calc(86px + env(safe-area-inset-bottom));z-index:70;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{
+  background:var(--raised);border:1px solid var(--line);color:var(--ivory);
+  border-radius:999px;padding:10px 18px;font-size:14px;font-weight:600;
+  box-shadow:var(--shadow);animation:slideup .2s;
+  max-width:88vw;text-align:center;
+}
+.toast.ok{border-color:rgba(143,184,122,.5)}
+.toast.err{border-color:rgba(217,106,91,.5)}
+.banner{
+  display:flex;align-items:center;gap:10px;
+  background:linear-gradient(90deg,rgba(217,164,65,.12),rgba(217,164,65,.04));
+  border:1px solid var(--brass-dim);border-radius:var(--radius);
+  padding:10px 14px;margin-bottom:14px;font-size:13.5px;color:#e8d9ba;
+}
+.banner b{color:var(--brass-bright)}
+
+/* menu lateral simples */
+.menu-list{display:flex;flex-direction:column;gap:2px;margin-top:4px}
+.menu-list button, .menu-list label.mbtn{
+  display:flex;align-items:center;gap:12px;text-align:left;
+  padding:14px 12px;border-radius:var(--radius-sm);font-size:15px;font-weight:600;cursor:pointer;
+}
+.menu-list button:hover,.menu-list label.mbtn:hover{background:var(--raised)}
+.menu-list .mut{color:var(--muted);font-weight:400;font-size:13px;margin-left:auto}
+
+/* rodapé */
+footer.app{
+  text-align:center;color:var(--faint);font-size:12px;padding:30px 0 10px;
+}
+footer.app button{color:var(--faint);text-decoration:underline dotted;font-size:12px}
+
+/* impressão: só a música */
+@media print{
+  body{background:#fff;color:#111}
+  #topbar,#floatbar,.songbar,footer.app,.banner{display:none!important}
+  .cifra .ln{white-space:pre-wrap}
+  .chordtxt{color:#000;border:0;font-weight:800}
+  pre.tab,.strum,.note{border-color:#bbb;background:#fff;color:#111}
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <header id="topbar"></header>
+  <main id="view" aria-live="polite"></main>
+</div>
+<div id="floatbar"></div>
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+
+<script>
+/* =====================================================================
+   CONFIG — edite apenas este bloco.
+   1) Sem preencher URL/KEY: o app roda em MODO DEMONSTRAÇÃO (dados locais,
+      editor liberado) — ideal para testar agora.
+   2) Para produção: crie o projeto no Supabase, rode o supabase-setup.sql,
+      e cole abaixo a URL e a anon key (Settings → API).
+===================================================================== */
+const CONFIG = {
+  SUPABASE_URL: "",        // ex.: "https://xxxxx.supabase.co" (Settings → API)
+  SUPABASE_ANON_KEY: "",   // chave "anon public" — é pública por design: só concede o que as regras RLS permitem (leitura)
+  APP_NAME: "Caderno de Cifras",        // padrão; o professor pode trocar pelo app (Personalizar)
+  PROFESSOR_NAME: "Professor",
+  VERSION: "0.4.0"
+};
+</script>
+
+<script>
+/* ============================ UTILITÁRIOS ============================ */
+const $  = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() :
+  'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+    const r = Math.random()*16|0; return (c==='x'?r:(r&0x3|0x8)).toString(16);
+  }));
+const norm = s => String(s||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase();
+
+/* armazenamento seguro: usa localStorage; se indisponível (sandbox/aba privada), memória */
+const safeStore = (() => {
+  let mem = {};
+  let ok = false;
+  try { localStorage.setItem("__t","1"); localStorage.removeItem("__t"); ok = true; } catch(e){}
+  return {
+    get(k){ try { return ok ? localStorage.getItem(k) : (mem[k] ?? null); } catch(e){ return mem[k] ?? null; } },
+    set(k,v){ try { if(ok) localStorage.setItem(k,v); else mem[k]=v; } catch(e){ mem[k]=v; } },
+    del(k){ try { if(ok) localStorage.removeItem(k); else delete mem[k]; } catch(e){ delete mem[k]; } },
+    persistent: ok
+  };
+})();
+
+function el(tag, props = {}, ...children){
+  const n = document.createElement(tag);
+  for (const [k,v] of Object.entries(props||{})){
+    if (k === "class") n.className = v;
+    else if (k === "html") n.innerHTML = v;
+    else if (k.startsWith("on") && typeof v === "function") n.addEventListener(k.slice(2), v);
+    else if (k === "dataset") Object.assign(n.dataset, v);
+    else if (v !== null && v !== undefined && v !== false) n.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of children.flat()){
+    if (c === null || c === undefined || c === false) continue;
+    n.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return n;
+}
+
+function toast(msg, kind=""){ 
+  const t = el("div", {class:"toast "+kind}, msg);
+  $("#toast-root").append(t);
+  setTimeout(() => { t.style.opacity="0"; t.style.transition="opacity .3s"; setTimeout(()=>t.remove(), 320); }, 2600);
+}
+
+function fmtTime(s){ const m=Math.floor(s/60), r=Math.floor(s%60); return m+":"+String(r).padStart(2,"0"); }
+const fmtDate = iso => { try { return new Date(iso).toLocaleDateString("pt-BR"); } catch(e){ return ""; } };
+
+/* ============================ ESTADO ============================ */
+const S = {
+  remote: !!(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_ANON_KEY),
+  songs: [],            // índice leve [{id,title,artist,difficulty,song_key,updated_at}]
+  session: null,        // sessão do professor (remote) — em demo, sempre "logado"
+  route: null,
+  scroller: { active:false, speed:1, raf:0 }
+};
+const isEditor = () => S.remote ? !!S.session : true;
+
+/* ============================ CAMADA DE DADOS ============================ */
+/* ---- Modo demonstração: safeStore ---- */
+const DemoDB = {
+  _all(){ try { return JSON.parse(safeStore.get("demo_songs") || "null") || demoSeed(); } catch(e){ return demoSeed(); } },
+  _save(list){ safeStore.set("demo_songs", JSON.stringify(list)); },
+  async list(){ return this._all().map(lightSong).sort(byTitle); },
+  async get(id){ return this._all().find(s => s.id === id) || null; },
+  async upsert(song){
+    const list = this._all().filter(s => s.id !== song.id);
+    list.push(song); this._save(list); return song;
+  },
+  async remove(id){ this._save(this._all().filter(s => s.id !== id)); },
+  async uploadAudio(blob){ // demo: base64 inline
+    if (blob.size > 2.5*1024*1024) throw new Error("No modo demonstração, áudios até ~2,5 MB. Grave um trecho mais curto.");
+    return await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(r.result);
+      r.onerror = () => rej(new Error("Falha ao ler o áudio."));
+      r.readAsDataURL(blob);
+    });
+  }
+};
+
+/* ---- Modo produção: Supabase via REST (sem dependências externas) ---- */
+const SB = {
+  base: CONFIG.SUPABASE_URL,
+  key: CONFIG.SUPABASE_ANON_KEY,
+  tokens: null, // {access_token, refresh_token, expires_at, user}
+  loadSession(){
+    try { this.tokens = JSON.parse(safeStore.get("sb_session") || "null"); } catch(e){ this.tokens = null; }
+    if (this.tokens) S.session = this.tokens.user || {};
+    return this.tokens;
+  },
+  saveSession(t){
+    if (t) { t.expires_at = Date.now() + ((t.expires_in || 3600) - 60) * 1000; }
+    this.tokens = t;
+    if (t) safeStore.set("sb_session", JSON.stringify(t)); else safeStore.del("sb_session");
+    S.session = t ? (t.user || {}) : null;
+  },
+  async ensureFresh(){
+    if (!this.tokens) return;
+    if (Date.now() < (this.tokens.expires_at || 0)) return;
+    try {
+      const r = await fetch(this.base + "/auth/v1/token?grant_type=refresh_token", {
+        method:"POST", headers:{ "apikey":this.key, "Content-Type":"application/json" },
+        body: JSON.stringify({ refresh_token: this.tokens.refresh_token })
+      });
+      if (!r.ok) throw 0;
+      this.saveSession(await r.json());
+    } catch(e){ this.saveSession(null); }
+  },
+  async login(email, password){
+    const r = await fetch(this.base + "/auth/v1/token?grant_type=password", {
+      method:"POST", headers:{ "apikey":this.key, "Content-Type":"application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error_description || j.msg || "E-mail ou senha incorretos.");
+    this.saveSession(j);
+    return j.user;
+  },
+  logout(){ this.saveSession(null); },
+  async recover(email){
+    const r = await fetch(this.base + "/auth/v1/recover", {
+      method:"POST", headers:{ "apikey":this.key, "Content-Type":"application/json" },
+      body: JSON.stringify({ email })
+    });
+    if (!r.ok){ let m = "Não foi possível enviar o e-mail de redefinição."; try { const j = await r.json(); m = j.msg || j.error_description || m; } catch(e){} throw new Error(m); }
+  },
+  async updatePassword(password, accessToken){
+    const r = await fetch(this.base + "/auth/v1/user", {
+      method:"PUT",
+      headers:{ "apikey":this.key, "Content-Type":"application/json", "Authorization":"Bearer " + accessToken },
+      body: JSON.stringify({ password })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.msg || j.error_description || "Não foi possível salvar a nova senha.");
+    return j;
+  },
+  async headers(json=true){
+    await this.ensureFresh();
+    const h = { "apikey": this.key, "Authorization": "Bearer " + (this.tokens?.access_token || this.key) };
+    if (json) h["Content-Type"] = "application/json";
+    return h;
+  },
+  async rest(path, opts={}){
+    const r = await fetch(this.base + "/rest/v1/" + path, { ...opts, headers: { ...(await this.headers()), ...(opts.headers||{}) } });
+    if (!r.ok){
+      let msg = "Erro de comunicação com o servidor (" + r.status + ").";
+      try { const j = await r.json(); msg = j.message || j.hint || msg; } catch(e){}
+      if (r.status === 401){ this.saveSession(null); msg = "Sua sessão expirou. Entre novamente na Área do professor."; }
+      if (r.status === 403) msg = "Sem permissão para editar: confira se este e-mail está na lista de editores (tabela editores no Supabase).";
+      throw new Error(msg);
+    }
+    if (r.status === 204) return null;
+    return r.json();
+  }
+};
+
+const RemoteDB = {
+  async list(){
+    const rows = await SB.rest("songs?select=id,title,artist,difficulty,song_key,updated_at&order=title.asc");
+    return rows.map(lightSong);
+  },
+  async get(id){
+    const rows = await SB.rest("songs?select=*&id=eq." + encodeURIComponent(id));
+    return rows[0] || null;
+  },
+  async upsert(song){
+    const rows = await SB.rest("songs", {
+      method:"POST",
+      headers:{ "Prefer":"resolution=merge-duplicates,return=representation" },
+      body: JSON.stringify([song])
+    });
+    return rows[0];
+  },
+  async remove(id){
+    await SB.rest("songs?id=eq." + encodeURIComponent(id), { method:"DELETE" });
+  },
+  async uploadAudio(blob, path){
+    const h = await SB.headers(false);
+    const r = await fetch(SB.base + "/storage/v1/object/audios/" + path, {
+      method:"POST",
+      headers:{ ...h, "Content-Type": blob.type || "application/octet-stream", "x-upsert":"true" },
+      body: blob
+    });
+    if (!r.ok) throw new Error("Falha ao enviar o áudio (" + r.status + "). Verifique se você está logado.");
+    return SB.base + "/storage/v1/object/public/audios/" + path;
+  }
+};
+
+const DB = () => S.remote ? RemoteDB : DemoDB;
+
+/* nome do caderno/professor: padrão do CONFIG, personalizável pelo professor (tabela app_config) */
+const CFG = { app_name: CONFIG.APP_NAME, professor_name: CONFIG.PROFESSOR_NAME };
+function applyCfg(o){
+  if (o && o.app_name) CFG.app_name = o.app_name;
+  if (o && o.professor_name) CFG.professor_name = o.professor_name;
+  document.title = CFG.app_name;
+}
+async function loadConfig(){
+  try { applyCfg(JSON.parse(safeStore.get("app_cfg") || "null")); } catch(e){}
+  if (!S.remote) return;
+  try {
+    const rows = await SB.rest("app_config?select=app_name,professor_name&id=eq.1");
+    if (rows && rows[0]){ applyCfg(rows[0]); safeStore.set("app_cfg", JSON.stringify(rows[0])); renderTopbar(); }
+  } catch(e){}
+}
+async function saveConfig(app_name, professor_name){
+  const o = { app_name, professor_name };
+  if (S.remote) await SB.rest("app_config?id=eq.1", { method:"PATCH", body: JSON.stringify(o) });
+  applyCfg(o);
+  safeStore.set("app_cfg", JSON.stringify(o));
+}
+const lightSong = s => ({ id:s.id, title:s.title, artist:s.artist, difficulty:s.difficulty, song_key:s.song_key, updated_at:s.updated_at });
+const byTitle = (a,b) => norm(a.title).localeCompare(norm(b.title));
+
+/* cache local do índice (abre instantâneo / offline) */
+function cacheSongs(list){ safeStore.set("songs_cache", JSON.stringify(list)); }
+function cachedSongs(){ try { return JSON.parse(safeStore.get("songs_cache")||"null")||[]; } catch(e){ return []; } }
+</script>
+<script>
+/* ============================ MOTOR MUSICAL ============================ */
+const SHARPS = ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+const FLATS  = ["C","Db","D","Eb","E","F","Gb","G","Ab","A","Bb","B"];
+const SEMI = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 };
+
+function parseChord(sym){
+  const m = /^([A-G])([#b]?)([^/]*)(?:\/([A-G][#b]?))?$/.exec(sym.trim());
+  if (!m) return null;
+  let semi = SEMI[m[1]] + (m[2]==="#" ? 1 : m[2]==="b" ? -1 : 0);
+  semi = ((semi % 12) + 12) % 12;
+  return { semi, qual: m[3] || "", bass: m[4] || null, flat: m[2]==="b" };
+}
+function noteName(semi, flat){ return (flat ? FLATS : SHARPS)[((semi%12)+12)%12]; }
+function transposeChord(sym, delta, preferFlat){
+  const p = parseChord(sym);
+  if (!p) return sym;
+  let out = noteName(p.semi + delta, preferFlat) + p.qual;
+  if (p.bass){
+    const b = parseChord(p.bass);
+    if (b) out += "/" + noteName(b.semi + delta, preferFlat);
+  }
+  return out;
+}
+function usesFlats(song){
+  if ((song.song_key||"").includes("b")) return true;
+  return (song.blocks||[]).some(b => (b.content||"").includes("[") && /\[[A-G]b/.test(b.content||""));
+}
+
+/* qualidade → forma normalizada */
+function normQual(q){
+  q = (q||"").replace("º","dim").replace("°","dim").trim();
+  if (q === "" ) return "maj";
+  if (/^(maj7|7\+|7M|M7)$/i.test(q)) return "maj7";
+  if (/^m(in)?7$/.test(q)) return "m7";
+  if (/^m(in)?$/.test(q)) return "m";
+  if (q === "7") return "7";
+  if (/^sus4?$/.test(q) || q === "4") return "sus4";
+  if (q === "sus2") return "sus2";
+  return q; // desconhecida — pode não ter diagrama
+}
+
+/* acordes abertos (cordas 6→1; -1 = não toca; 0 = solta) */
+const OPEN_SHAPES = {
+  "0_maj":[-1,3,2,0,1,0],  "0_7":[-1,3,2,3,1,0],  "0_maj7":[-1,3,2,0,0,0],   // C
+  "2_maj":[-1,-1,0,2,3,2], "2_m":[-1,-1,0,2,3,1], "2_7":[-1,-1,0,2,1,2],
+  "2_m7":[-1,-1,0,2,1,1],  "2_sus4":[-1,-1,0,2,3,3], "2_sus2":[-1,-1,0,2,3,0], // D
+  "4_maj":[0,2,2,1,0,0],   "4_m":[0,2,2,0,0,0],   "4_7":[0,2,0,1,0,0],
+  "4_m7":[0,2,0,0,0,0],    "4_sus4":[0,2,2,2,0,0], "4_maj7":[0,2,1,1,0,0],    // E
+  "7_maj":[3,2,0,0,0,3],   "7_7":[3,2,0,0,0,1],                                // G
+  "9_maj":[-1,0,2,2,2,0],  "9_m":[-1,0,2,2,1,0],  "9_7":[-1,0,2,0,2,0],
+  "9_m7":[-1,0,2,0,1,0],   "9_maj7":[-1,0,2,1,2,0],
+  "9_sus2":[-1,0,2,2,0,0], "9_sus4":[-1,0,2,2,3,0],                            // A
+  "11_7":[-1,2,1,2,0,2]                                                        // B7
+};
+/* formas móveis (pestana) — casas relativas; 1 = casa da pestana */
+const BARRE_E = { maj:[1,3,3,2,1,1], m:[1,3,3,1,1,1], "7":[1,3,1,2,1,1], m7:[1,3,1,1,1,1], maj7:[1,3,2,2,1,1], sus4:[1,3,3,3,1,1] };
+const BARRE_A = { maj:[-1,1,3,3,3,1], m:[-1,1,3,3,2,1], "7":[-1,1,3,1,3,1], m7:[-1,1,3,1,2,1], maj7:[-1,1,3,2,3,1], sus2:[-1,1,3,3,1,1], sus4:[-1,1,3,3,4,1] };
+
+function chordShape(sym){
+  const p = parseChord(sym);
+  if (!p) return null;
+  const q = normQual(p.qual);
+  const open = OPEN_SHAPES[p.semi + "_" + q];
+  if (open) return { frets: open, baseFret: 1, barre: null, bass: p.bass };
+  const eFret = ((p.semi - 4) % 12 + 12) % 12;
+  const aFret = ((p.semi - 9) % 12 + 12) % 12;
+  const cand = [];
+  if (BARRE_E[q]) cand.push({ rel: BARRE_E[q], fret: eFret === 0 ? 12 : eFret, from: 6 });
+  if (BARRE_A[q]) cand.push({ rel: BARRE_A[q], fret: aFret === 0 ? 12 : aFret, from: 5 });
+  if (!cand.length) return null;
+  cand.sort((a,b) => a.fret - b.fret);
+  const c = cand[0];
+  const frets = c.rel.map(v => v === -1 ? -1 : v + c.fret - 1);
+  return { frets, baseFret: c.fret, barre: { fret: c.fret, from: c.from }, bass: p.bass };
+}
+
+function chordSVG(shape){
+  const W = 200, H = 226, left = 34, top = 40, sw = 26, fh = 34, NF = 4;
+  const base = shape.baseFret <= 1 ? 1 : shape.baseFret;
+  const x = st => left + (6 - st) * sw;             // corda 6 à esquerda
+  const yF = f => top + (f - .5) * fh;              // centro da casa relativa f
+  let s = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Diagrama do acorde">`;
+  // pestana (atrás das linhas)
+  if (shape.barre){
+    const rel = shape.barre.fret - base + 1;
+    if (rel >= 1 && rel <= NF)
+      s += `<rect x="${x(shape.barre.from)-9}" y="${yF(rel)-9}" width="${x(1)-x(shape.barre.from)+18}" height="18" rx="9" fill="#d9a441" opacity=".92"/>`;
+  }
+  for (let f = 0; f <= NF; f++){
+    const y = top + f * fh;
+    s += `<line x1="${x(6)}" y1="${y}" x2="${x(1)}" y2="${y}" stroke="#5a4a36" stroke-width="${f===0 && base===1 ? 6 : 1.6}" stroke-linecap="round"/>`;
+  }
+  for (let st = 1; st <= 6; st++)
+    s += `<line x1="${x(st)}" y1="${top}" x2="${x(st)}" y2="${top + NF*fh}" stroke="#7a6c58" stroke-width="${1 + (st-1)*.28}"/>`;
+  if (base > 1)
+    s += `<text x="${left-12}" y="${yF(1)+5}" fill="#a8977f" font-size="14" text-anchor="end" font-family="system-ui">${base}ª</text>`;
+  shape.frets.forEach((f, i) => {
+    const st = 6 - i, cx = x(st);
+    if (f === -1) s += `<text x="${cx}" y="${top-14}" fill="#7a6c58" font-size="15" text-anchor="middle" font-family="system-ui">×</text>`;
+    else if (f === 0) s += `<circle cx="${cx}" cy="${top-18}" r="5.5" fill="none" stroke="#a8977f" stroke-width="1.8"/>`;
+    else {
+      const rel = f - base + 1;
+      if (rel >= 1 && rel <= NF)
+        s += `<circle cx="${cx}" cy="${yF(rel)}" r="9" fill="#f0bd5e" stroke="#171310" stroke-width="1.5"/>`;
+    }
+  });
+  return s + "</svg>";
+}
+
+/* ============================ CIFRA → HTML ============================ */
+function parseCifraLine(line){
+  const chords = []; let lyric = ""; let last = 0;
+  const re = /\[([^\]\n]+)\]/g; let m;
+  while ((m = re.exec(line))){
+    lyric += line.slice(last, m.index);
+    chords.push({ sym: m[1], pos: lyric.length });
+    last = re.lastIndex;
+  }
+  lyric += line.slice(last);
+  return { chords, lyric };
+}
+function renderCifraHTML(content, delta, preferFlat){
+  const lines = String(content||"").replace(/\r/g,"").split("\n");
+  let html = "";
+  for (const raw of lines){
+    const { chords, lyric } = parseCifraLine(raw);
+    const shown = chords.map(c => transposeChord(c.sym, delta, preferFlat));
+    if (!chords.length){
+      html += `<div class="ln">${esc(lyric) || "&nbsp;"}</div>`;
+    } else if (lyric.trim() === ""){
+      html += `<div class="ln chords-only">` + shown.map(c =>
+        `<span class="chordtxt" data-ch="${esc(c)}">${esc(c)}</span>`).join("&nbsp;&nbsp;") + `</div>`;
+    } else {
+      let cline = "", col = 0;
+      chords.forEach((c, i) => {
+        const name = shown[i];
+        const target = Math.max(c.pos, col + (col > 0 ? 1 : 0));
+        cline += " ".repeat(target - col);
+        cline += `<span class="chordtxt" data-ch="${esc(name)}">${esc(name)}</span>`;
+        col = target + name.length;
+      });
+      html += `<div class="ln">${cline}</div><div class="ln">${esc(lyric)}</div>`;
+    }
+  }
+  return html;
+}
+
+/* ============================ BATIDA → HTML ============================ */
+const STRUM_SYM = { D:"↓", U:"↑", X:"×", "-":"·" };
+const STRUM_CLS = { D:"d", U:"u", X:"x", "-":"r" };
+function beatLabel(i, perBeat){
+  const sub = i % perBeat, beat = Math.floor(i / perBeat) + 1;
+  if (sub === 0) return String(beat);
+  if (perBeat === 2) return "e";
+  return ["","e","&","a"][sub] || "";
+}
+function renderStrumHTML(block){
+  const pat = block.pattern && block.pattern.length ? block.pattern : ["D","-","D","U","-","U","D","U"];
+  const perBeat = pat.length % 4 === 0 ? pat.length / 4 : 1;
+  let cells = pat.map((v, i) =>
+    `<div class="beat ${STRUM_CLS[v]||"r"} ${perBeat>1 && i%perBeat===0 && i>0 ? "group-start":""}">
+       <span class="sym">${STRUM_SYM[v]||"·"}</span><span class="n">${beatLabel(i, perBeat)}</span>
+     </div>`).join("");
+  let foot = `<div class="strum-foot">
+      ${block.bpm ? `<span class="bpm">Andamento: <b>${esc(block.bpm)} bpm</b></span>` : ""}
+      <span class="bpm">↓ para baixo &nbsp;·&nbsp; ↑ para cima &nbsp;·&nbsp; × abafada</span>
+    </div>`;
+  return `<div class="strum"><div class="strum-lane">${cells}</div>${foot}
+    ${block.audio ? `<audio class="player" controls preload="none" src="${esc(block.audio)}"></audio>` : ""}</div>`;
+}
+
+/* ============================ DADOS DE DEMONSTRAÇÃO ============================ */
+function demoSeed(){
+  const now = new Date().toISOString();
+  return [{
+    id: "demo-1", title: "Canção de Exemplo nº 1", artist: "Repertório da aula",
+    song_key: "G", capo: 0, difficulty: "iniciante", tags: "exemplo, balada",
+    updated_at: now,
+    blocks: [
+      { id:"b1", type:"cifra", title:"Intro", content:"[G]  [D]  [Em]  [C]" },
+      { id:"b2", type:"strum", title:"Batida principal", pattern:["D","-","D","U","-","U","D","U"], bpm:92 },
+      { id:"b3", type:"cifra", title:"Verso 1", content:
+"[G]Toda manhã o sol [D]chega devagar\n[Em]Abro a janela e [C]vejo o dia clarear\n[G]Pego o violão que [D]mora no sofá\n[Em]E deixo essa can[C]ção me acompa[G]nhar" },
+      { id:"b4", type:"cifra", title:"Refrão", content:
+"[C]É só seguir o [G]ritmo do coração\n[D]Uma batida [Em]certa, e a mão\n[C]Desce e sobe [G]leve, sem apertar\n[D]Que a música apa[G]rece no ar" },
+      { id:"b5", type:"note", content:"Atenção na troca G → D: antecipe o dedo 1. Toque o refrão mais forte, com a mão mais solta no punho." }
+    ]
+  },{
+    id: "demo-2", title: "Canção de Exemplo nº 2", artist: "Repertório da aula",
+    song_key: "Am", capo: 0, difficulty: "intermediário", tags: "exemplo, pestana, riff",
+    updated_at: now,
+    blocks: [
+      { id:"c1", type:"tab", subtype:"riff", title:"Riff de entrada", content:
+"e|--------------------------------|\nB|--------------1-----------------|\nG|----2-----2------2----0---------|\nD|--------------------------2-----|\nA|--0-----------------------------|\nE|--------------------------------|" },
+      { id:"c2", type:"cifra", title:"Verso 1", content:
+"[Am]A noite cai na es[F]trada, sem pres[C]sa de chegar\n[G]O farol acende a [Am]poeira no ar\n[Am]Levo no banco um [F]caderno e um vio[C]lão\n[G]E uma pestana pra [Am]treinar a mão" },
+      { id:"c3", type:"strum", title:"Batida do verso", pattern:["D","-","-","U","-","U","D","-"], bpm:76 },
+      { id:"c4", type:"strum", title:"Batida do refrão (mais cheia)", pattern:["D","-","D","U","-","U","D","U"], bpm:76 },
+      { id:"c5", type:"tab", subtype:"solo", title:"Solo (frase 1)", content:
+"e|--------------------5--8--5---------------|\nB|--5--8--5--6--5--------------8--6--5-------|\nG|--------------------------------------7-5--|\nD|-------------------------------------------|\nA|-------------------------------------------|\nE|-------------------------------------------|" },
+      { id:"c6", type:"note", content:"No F com pestana: aperte mais com o peso do braço do que com a força do polegar. Se cansar, alterne com o riff." }
+    ]
+  }];
+}
+</script>
+<script>
+/* ============================ MODAIS / SHEETS ============================ */
+function openSheet(build){
+  const back = el("div", { class:"modal-back", onclick: e => { if (e.target === back) close(); } });
+  const sheet = el("div", { class:"sheet", role:"dialog", "aria-modal":"true" }, el("div", { class:"grab" }));
+  back.append(sheet);
+  const close = () => { back.remove(); document.removeEventListener("keydown", onKey); };
+  const onKey = e => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  $("#modal-root").append(back);
+  build(sheet, close);
+  return close;
+}
+function openConfirm(title, msg, okLabel = "Confirmar", danger = false){
+  return new Promise(res => {
+    openSheet((sheet, close) => {
+      sheet.append(
+        el("h2", {}, title),
+        el("p", { class:"sub" }, msg),
+        el("div", { class:"actions" },
+          el("button", { class:"btn ghost", onclick: () => { close(); res(false); } }, "Cancelar"),
+          el("button", { class:"btn" + (danger ? " danger" : ""), onclick: () => { close(); res(true); } }, okLabel)
+        )
+      );
+    });
+  });
+}
+function openChordModal(sym){
+  openSheet((sheet, close) => {
+    const shape = chordShape(sym);
+    const p = parseChord(sym);
+    const wrap = el("div", { class:"diagram-wrap" },
+      el("div", { class:"cname" }, sym)
+    );
+    if (p && p.bass) wrap.append(el("div", { class:"cbass" }, "com baixo em " + p.bass));
+    if (shape) wrap.append(el("div", { html: chordSVG(shape) }));
+    else wrap.append(el("div", { class:"nodiag" }, "Diagrama automático indisponível para este acorde. Pergunte ao professor a montagem — ou toque a versão mais simples dele (ex.: sem a extensão)."));
+    sheet.append(wrap, el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar")));
+  });
+}
+
+/* ============================ TOPBAR / MENU ============================ */
+function logoSVG(size = 30){
+  return `<svg width="${size}" height="${size}" viewBox="0 0 30 30" fill="none" aria-hidden="true">
+    <rect x="1" y="1" width="28" height="28" rx="8" fill="#2a221b" stroke="#3a2f24"/>
+    <line x1="8" y1="7" x2="8" y2="23" stroke="#7a6c58" stroke-width="1.4"/>
+    <line x1="13" y1="7" x2="13" y2="23" stroke="#7a6c58" stroke-width="1.4"/>
+    <line x1="18" y1="7" x2="18" y2="23" stroke="#7a6c58" stroke-width="1.4"/>
+    <line x1="23" y1="7" x2="23" y2="23" stroke="#7a6c58" stroke-width="1.4"/>
+    <line x1="6" y1="8" x2="25" y2="8" stroke="#d9a441" stroke-width="2.6" stroke-linecap="round"/>
+    <line x1="6" y1="14" x2="25" y2="14" stroke="#5a4a36" stroke-width="1.2"/>
+    <line x1="6" y1="19" x2="25" y2="19" stroke="#5a4a36" stroke-width="1.2"/>
+    <circle cx="13" cy="16.5" r="2.6" fill="#f0bd5e"/>
+    <circle cx="18" cy="11.2" r="2.6" fill="#f0bd5e"/>
+  </svg>`;
+}
+function renderTopbar(){
+  const bar = $("#topbar");
+  bar.innerHTML = "";
+  const home = S.route.view === "home";
+  if (!home) bar.append(el("button", { class:"iconbtn", "aria-label":"Voltar", onclick: () => history.length > 1 ? history.back() : location.hash = "" },
+    el("span", { html:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>' })));
+  bar.append(el("button", { class:"brand", onclick: () => location.hash = "" },
+    el("span", { html: logoSVG() }),
+    el("span", { class:"t" }, CFG.app_name, el("span", { class:"s" }, "Aulas de violão e guitarra · " + CFG.professor_name))
+  ));
+  bar.append(el("button", { class:"iconbtn", "aria-label":"Menu", onclick: openMenu },
+    el("span", { html:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>' })));
+}
+function openMenu(){
+  openSheet((sheet, close) => {
+    sheet.append(el("h2", {}, "Menu"));
+    const list = el("div", { class:"menu-list" });
+    if (S.remote && !S.session){
+      list.append(el("button", { onclick: () => { close(); openLogin(); } }, "🔑 Área do professor"));
+    }
+    if (isEditor()){
+      if (S.remote) list.append(el("button", { onclick: () => { close(); SB.logout(); toast("Você saiu da área do professor."); route(); } }, "🚪 Sair da área do professor", el("span", { class:"mut" }, S.session?.email || "")));
+      list.append(el("button", { onclick: () => { close(); exportData(); } }, "⤓ Exportar backup (JSON)"));
+      const inp = el("input", { type:"file", accept:"application/json", style:"display:none",
+        onchange: e => { if (e.target.files[0]) importData(e.target.files[0]); close(); } });
+      list.append(el("label", { class:"mbtn" }, "⤒ Importar backup", inp));
+      list.append(el("button", { onclick: () => { close(); openSettings(); } }, "✏️ Personalizar nomes"));
+    }
+    list.append(el("button", { onclick: () => { close(); openHelp(); } }, "❓ Como usar"));
+    list.append(el("button", { onclick: () => { close(); openAbout(); } }, "ℹ️ Sobre", el("span", { class:"mut" }, "v" + CONFIG.VERSION)));
+    sheet.append(list);
+  });
+}
+function openAbout(){
+  openSheet((sheet, close) => {
+    sheet.append(
+      el("h2", {}, CFG.app_name),
+      el("p", { class:"sub" }, "Caderno de cifras das aulas de " + CFG.professor_name + ". Toda música salva pelo professor aparece na hora para os alunos."),
+      el("p", { class:"sub", style:"margin-top:10px" }, S.remote
+        ? "Versão " + CONFIG.VERSION + " · conectado · alunos têm acesso somente de leitura (garantido no servidor)."
+        : "Versão " + CONFIG.VERSION + " · modo demonstração · os dados ficam apenas neste aparelho."),
+      el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar"))
+    );
+  });
+}
+
+/* ============================ PERSONALIZAR / COMO USAR ============================ */
+function openSettings(){
+  openSheet((sheet, close) => {
+    const a = el("input", { class:"input", value: CFG.app_name, maxlength:40 });
+    const b = el("input", { class:"input", value: CFG.professor_name, maxlength:40 });
+    const btn = el("button", { class:"btn", onclick: async () => {
+      btn.disabled = true; btn.textContent = "Salvando…";
+      try {
+        await saveConfig(a.value.trim() || "Caderno de Cifras", b.value.trim() || "Professor");
+        renderTopbar();
+        close(); toast("Nomes atualizados para todos!", "ok");
+      } catch(e){ toast(e.message, "err"); btn.disabled = false; btn.textContent = "Salvar"; }
+    } }, "Salvar");
+    sheet.append(
+      el("h2", {}, "Personalizar"),
+      el("p", { class:"sub", style:"margin-bottom:14px" }, "Esses nomes aparecem no topo do app para você e para os alunos."),
+      el("div", { class:"field" }, el("label", {}, "Nome do caderno"), a),
+      el("div", { class:"field" }, el("label", {}, "Nome do professor"), b),
+      el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Cancelar"), btn));
+  });
+}
+function openHelp(){
+  openSheet((sheet, close) => {
+    sheet.append(el("h2", {}, "Como usar"));
+    const ol = el("ol", { style:"padding-left:20px;display:flex;flex-direction:column;gap:10px;color:var(--ivory);font-size:14.5px" });
+    const li = (html) => el("li", { html });
+    if (isEditor()){
+      ol.append(
+        li("Toque em <b>＋ Nova música</b> e preencha título, tom, capotraste e nível."),
+        li("Monte a música por <b>seções</b>, na ordem de tocar: Cifra, Batida, Riff, Solo e Anotação."),
+        li("Na <b>Cifra</b>, escreva a letra e toque nos acordes da paleta — eles entram como <span style='font-family:var(--mono);color:var(--brass-bright)'>[G]</span> e aparecem alinhados em cima da sílaba certa."),
+        li("Na <b>Batida</b>, toque nos tempos para montar ↓ ↑ × · e <b>grave você tocando</b> — o aluno escuta do lado do desenho."),
+        li(S.remote
+          ? "<b>Salvar música</b>: ela entra no ar <b>na hora</b> para todos os alunos — não existe botão de publicar."
+          : "<b>Salvar música</b>: no modo demonstração, ela fica só neste aparelho."),
+        li("Aluno novo? Mande o <b>link do caderno</b> uma vez e peça para usar <b>Adicionar à tela inicial</b> — vira aplicativo e atualiza sozinho."),
+        li("De vez em quando, use <b>Menu → ⤓ Exportar backup</b> e guarde o arquivo por segurança."));
+    } else {
+      ol.append(
+        li("Use a <b>busca</b> para achar a música pelo nome ou artista."),
+        li("Toque em qualquer <b>acorde dourado</b> para ver o desenho de como montar no braço."),
+        li("Os botões <b>♭ e ♯</b> mudam o tom da música inteira; o do meio volta ao tom original."),
+        li("<b>A− / A＋</b> ajustam o tamanho da letra."),
+        li("O botão <b>▶</b> no canto rola a página sozinha enquanto você toca — dá para ajustar a velocidade."),
+        li("Nas <b>batidas</b>, aperte o play para ouvir o professor tocando o ritmo."),
+        li("Use <b>Adicionar à tela inicial</b> no menu do navegador: vira aplicativo, e as músicas e áudios que você já abriu funcionam <b>sem internet</b>."));
+    }
+    sheet.append(ol, el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar")));
+  });
+}
+
+/* ============================ LOGIN ============================ */
+function openLogin(){
+  openSheet((sheet, close) => {
+    const email = el("input", { class:"input", type:"email", autocomplete:"username", placeholder:"seu@email.com" });
+    const pass  = el("input", { class:"input", type:"password", autocomplete:"current-password", placeholder:"••••••••" });
+    const btn = el("button", { class:"btn block", onclick: doLogin }, "Entrar");
+    async function doLogin(){
+      btn.disabled = true; btn.textContent = "Entrando…";
+      try {
+        await SB.login(email.value.trim(), pass.value);
+        toast("Bem-vindo, professor!", "ok");
+        close(); route();
+      } catch(err){
+        toast(err.message, "err");
+        btn.disabled = false; btn.textContent = "Entrar";
+      }
+    }
+    pass.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+    const forgot = el("button", { class:"btn small ghost", style:"margin-top:10px;width:100%", onclick: async () => {
+      const em = email.value.trim();
+      if (!em){ toast("Digite seu e-mail acima primeiro.", "err"); email.focus(); return; }
+      forgot.disabled = true; forgot.textContent = "Enviando…";
+      try { await SB.recover(em); toast("Enviamos um link de redefinição para " + em + ".", "ok"); close(); }
+      catch(e){ toast(e.message, "err"); forgot.disabled = false; forgot.textContent = "Esqueci a senha"; }
+    } }, "Esqueci a senha");
+    sheet.append(
+      el("h2", {}, "Área do professor"),
+      el("p", { class:"sub", style:"margin-bottom:14px" }, "Somente o professor edita o caderno. Alunos não precisam de senha."),
+      el("div", { class:"field" }, el("label", {}, "E-mail"), email),
+      el("div", { class:"field" }, el("label", {}, "Senha"), pass),
+      btn, forgot
+    );
+    setTimeout(() => email.focus(), 60);
+  });
+}
+
+/* ============================ REDEFINIR SENHA ============================ */
+function recoveryParams(){
+  const h = location.hash.replace(/^#\/?/, "");
+  if (!h.includes("access_token=") || !h.includes("type=recovery")) return null;
+  const q = new URLSearchParams(h);
+  return { access_token: q.get("access_token"), refresh_token: q.get("refresh_token"), expires_in: parseInt(q.get("expires_in") || "3600", 10) };
+}
+function openPasswordReset(tok){
+  openSheet((sheet, close) => {
+    const p1 = el("input", { class:"input", type:"password", autocomplete:"new-password", placeholder:"Nova senha (mín. 8 caracteres)" });
+    const p2 = el("input", { class:"input", type:"password", autocomplete:"new-password", placeholder:"Repita a nova senha" });
+    const btn = el("button", { class:"btn block", onclick: save }, "Salvar nova senha");
+    async function save(){
+      if (p1.value.length < 8){ toast("Use pelo menos 8 caracteres.", "err"); return; }
+      if (p1.value !== p2.value){ toast("As senhas não conferem.", "err"); return; }
+      btn.disabled = true; btn.textContent = "Salvando…";
+      try {
+        const u = await SB.updatePassword(p1.value, tok.access_token);
+        SB.saveSession({ access_token: tok.access_token, refresh_token: tok.refresh_token, expires_in: tok.expires_in, user: u || {} });
+        history.replaceState(null, "", location.pathname + location.search);
+        close(); toast("Senha atualizada — você já está na área do professor.", "ok");
+        route();
+      } catch(e){ toast(e.message, "err"); btn.disabled = false; btn.textContent = "Salvar nova senha"; }
+    }
+    sheet.append(
+      el("h2", {}, "Definir nova senha"),
+      el("p", { class:"sub", style:"margin-bottom:14px" }, "Você chegou aqui pelo link de redefinição enviado ao seu e-mail."),
+      el("div", { class:"field" }, p1),
+      el("div", { class:"field" }, p2),
+      btn
+    );
+    setTimeout(() => p1.focus(), 60);
+  });
+}
+
+/* ============================ HOME ============================ */
+async function renderHome(){
+  const v = $("#view");
+  v.innerHTML = "";
+  stopScroll(); $("#floatbar").innerHTML = "";
+  if (!S.remote) v.append(el("div", { class:"banner", html:"<b>Modo demonstração</b> — os dados ficam só neste aparelho. Siga o GUIA-INSTALACAO para conectar ao Supabase e liberar para os alunos." }));
+  v.append(el("div", { class:"eyebrow" }, "Repertório"));
+  v.append(el("h1", { class:"page" }, "Qual música vamos tocar?"));
+
+  const inp = el("input", { type:"search", placeholder:"Buscar por música ou artista…", autocomplete:"off",
+    oninput: () => renderList(inp.value) });
+  v.append(el("div", { class:"search" },
+    el("span", { html:'<svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.5" y2="16.5"/></svg>' }),
+    inp));
+
+  if (isEditor()){
+    v.append(el("button", { class:"btn block", style:"margin-bottom:16px", onclick: () => location.hash = "#/e/nova" }, "＋ Nova música"));
+  }
+  const listWrap = el("div", { id:"songlist" });
+  v.append(listWrap, el("hr", { class:"string-rule" }));
+  v.append(el("footer", { class:"app" },
+    (S.remote && !S.session) ? el("button", { onclick: openLogin }, "Área do professor") : "",
+    el("div", { style:"margin-top:6px" }, CFG.app_name + " · v" + CONFIG.VERSION)
+  ));
+
+  function renderList(q = ""){
+    const nq = norm(q);
+    const rows = S.songs.filter(s => !nq || norm(s.title).includes(nq) || norm(s.artist).includes(nq));
+    listWrap.innerHTML = "";
+    if (!rows.length){
+      listWrap.append(el("div", { class:"empty" },
+        el("div", { class:"big" }, q ? "Nenhuma música encontrada" : "O caderno ainda está vazio"),
+        el("div", {}, q ? "Confira a grafia ou tente só parte do nome." : (isEditor() ? "Toque em “＋ Nova música” para adicionar a primeira." : "O professor ainda vai adicionar as músicas."))));
+      return;
+    }
+    rows.forEach(s => listWrap.append(
+      el("button", { class:"songrow", onclick: () => location.hash = "#/m/" + s.id },
+        el("span", { class:"dot", "aria-hidden":"true" }),
+        el("span", { class:"info" },
+          el("span", { class:"title" }, s.title),
+          el("span", { class:"meta" },
+            s.artist || "—",
+            s.song_key ? "  ·  Tom " + s.song_key : "",
+            "  ",
+            s.difficulty ? el("span", { class:"badge b-" + norm(s.difficulty) }, s.difficulty) : "")),
+        el("span", { class:"chev", html:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' })
+      )));
+  }
+  renderList();
+
+  // dados: cache instantâneo + atualização
+  if (!S.songs.length && cachedSongs().length){ S.songs = cachedSongs(); renderList(inp.value); }
+  try {
+    S.songs = await DB().list();
+    cacheSongs(S.songs);
+    renderList(inp.value);
+  } catch(err){
+    if (!S.songs.length) toast("Sem conexão — mostrando o que está salvo no aparelho.", "err");
+  }
+}
+
+/* ============================ PÁGINA DA MÚSICA ============================ */
+async function renderSong(id){
+  const v = $("#view");
+  v.innerHTML = "";
+  let song = null, offline = false;
+  try {
+    song = await DB().get(id);
+    if (song && S.remote) safeStore.set("song_" + id, JSON.stringify(song));
+  } catch(err){
+    try { song = JSON.parse(safeStore.get("song_" + id) || "null"); } catch(e){}
+    if (song) offline = true; else toast(err.message, "err");
+  }
+  if (offline) toast("Sem conexão — mostrando a última versão desta música.", "");
+  if (!song){
+    v.append(el("div", { class:"empty" }, el("div", { class:"big" }, "Música não encontrada"),
+      el("div", {}, "Ela pode ter sido removida pelo professor.")));
+    return;
+  }
+  let tp = 0;
+  const preferFlat = usesFlats(song);
+
+  const head = el("div", { class:"song-head" },
+    el("div", { class:"eyebrow" }, "Cifra"),
+    el("h1", {}, song.title),
+    song.artist ? el("div", { class:"artist" }, song.artist) : "");
+  const meta = el("div", { class:"song-meta" });
+  const bar = el("div", { class:"songbar" });
+  const body = el("div", { id:"songbody" });
+  v.append(head, meta, bar, body);
+
+  function renderMeta(){
+    meta.innerHTML = "";
+    if (song.song_key) meta.append(el("span", { class:"chip", html:"Tom: <b>" + esc(transposeChord(song.song_key, tp, preferFlat)) + "</b>" + (tp ? " <span style='color:var(--faint)'>(orig. " + esc(song.song_key) + ")</span>" : "") }));
+    if (song.capo) meta.append(el("span", { class:"chip", html:"Capotraste: <b>" + esc(song.capo) + "ª casa</b>" }));
+    if (song.difficulty) meta.append(el("span", { class:"badge b-" + norm(song.difficulty), style:"align-self:center" }, song.difficulty));
+  }
+  function renderBar(){
+    bar.innerHTML = "";
+    bar.append(el("div", { class:"grp" },
+      el("span", { class:"lbl" }, "TOM"),
+      el("button", { class:"tbtn", "aria-label":"Meio tom abaixo", onclick: () => { tp--; renderAll(); } }, "♭"),
+      el("button", { class:"tbtn", "aria-label":"Tom original", onclick: () => { tp = 0; renderAll(); }, title:"Voltar ao tom original" },
+        el("span", { class:"tom" }, tp === 0 ? (song.song_key || "0") : (tp > 0 ? "+" + tp : tp))),
+      el("button", { class:"tbtn", "aria-label":"Meio tom acima", onclick: () => { tp++; renderAll(); } }, "♯")));
+    bar.append(el("div", { class:"grp" },
+      el("span", { class:"lbl" }, "LETRA"),
+      el("button", { class:"tbtn", onclick: () => setCifraSize(-1) }, "A−"),
+      el("button", { class:"tbtn", onclick: () => setCifraSize(+1) }, "A＋")));
+    if (isEditor()) bar.append(el("button", { class:"tbtn", style:"margin-left:auto;color:var(--brass-bright)", onclick: () => location.hash = "#/e/" + song.id }, "✎ Editar"));
+  }
+  const TAGNAMES = { cifra:"Cifra", strum:"Batida", note:"Anotação" };
+  function renderBlocks(){
+    body.innerHTML = "";
+    (song.blocks || []).forEach(b => {
+      const wrap = el("div", { class:"block" });
+      const tag = b.type === "tab" ? (b.subtype === "solo" ? "Solo" : "Riff") : (TAGNAMES[b.type] || "Seção");
+      wrap.append(el("div", { class:"block-h" },
+        el("span", { class:"tag" }, tag),
+        b.title ? el("span", { class:"name" }, b.title) : ""));
+      if (b.type === "cifra"){
+        wrap.append(el("div", { class:"cifra", html: renderCifraHTML(b.content, tp, preferFlat) }));
+      } else if (b.type === "tab"){
+        wrap.append(el("pre", { class:"tab" }, b.content || ""));
+        if (b.audio) wrap.append(el("audio", { class:"player", controls:true, preload:"none", src:b.audio }));
+      } else if (b.type === "strum"){
+        wrap.append(el("div", { html: renderStrumHTML(b) }));
+      } else if (b.type === "note"){
+        wrap.append(el("div", { class:"note" }, b.content || ""));
+      }
+      body.append(wrap);
+    });
+    if (!(song.blocks||[]).length) body.append(el("div", { class:"empty" }, "Esta música ainda não tem conteúdo."));
+  }
+  function renderAll(){ renderMeta(); renderBar(); renderBlocks(); }
+  renderAll();
+
+  body.addEventListener("click", e => {
+    const c = e.target.closest(".chordtxt");
+    if (c) openChordModal(c.dataset.ch);
+  });
+  renderFloatbar();
+}
+
+/* ============================ AUTO-SCROLL / FONTE ============================ */
+function setCifraSize(d){
+  let px = parseInt(safeStore.get("cifra_size") || "15", 10) + d;
+  px = Math.min(22, Math.max(12, px));
+  safeStore.set("cifra_size", String(px));
+  document.documentElement.style.setProperty("--cifra-size", px + "px");
+}
+function renderFloatbar(){
+  const f = $("#floatbar");
+  f.innerHTML = ""; f.className = "";
+  const spd = el("span", {}, "1.0×");
+  const speedBox = el("div", { class:"speed" },
+    el("button", { onclick: () => bumpSpeed(-0.25), "aria-label":"Mais devagar" }, "−"),
+    spd,
+    el("button", { onclick: () => bumpSpeed(+0.25), "aria-label":"Mais rápido" }, "＋"));
+  const fab = el("button", { class:"fab", "aria-label":"Rolagem automática", onclick: toggleScroll,
+    html:'<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>' });
+  f.append(speedBox, fab);
+  function bumpSpeed(d){
+    S.scroller.speed = Math.min(3, Math.max(0.25, +(S.scroller.speed + d).toFixed(2)));
+    spd.textContent = S.scroller.speed.toFixed(2).replace(/0$/,"") + "×";
+  }
+  function toggleScroll(){
+    if (S.scroller.active) return stopScroll();
+    S.scroller.active = true;
+    f.classList.add("scrolling");
+    fab.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+    let acc = 0;
+    const step = () => {
+      if (!S.scroller.active) return;
+      acc += S.scroller.speed * 0.55;
+      if (acc >= 1){ const px = Math.floor(acc); acc -= px; window.scrollBy(0, px); }
+      if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 2) return stopScroll();
+      S.scroller.raf = requestAnimationFrame(step);
+    };
+    S.scroller.raf = requestAnimationFrame(step);
+  }
+}
+function stopScroll(){
+  S.scroller.active = false;
+  cancelAnimationFrame(S.scroller.raf);
+  const f = $("#floatbar");
+  if (f){
+    f.classList.remove("scrolling");
+    const fab = f.querySelector(".fab");
+    if (fab) fab.innerHTML = '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+  }
+}
+</script>
+<script>
+/* ============================ GRAVADOR DE ÁUDIO ============================ */
+function pickMime(){
+  if (!window.MediaRecorder) return null;
+  for (const m of ["audio/mp4","audio/webm;codecs=opus","audio/webm"])
+    if (MediaRecorder.isTypeSupported(m)) return m;
+  return "";
+}
+const extFromMime = m => m && m.includes("mp4") ? "m4a" : m && m.includes("ogg") ? "ogg" : "webm";
+
+function openRecorder(onUse){
+  openSheet(async (sheet, close) => {
+    sheet.append(el("h2", {}, "Gravar áudio"),
+      el("p", { class:"sub" }, "Grave você tocando a batida ou o trecho, bem perto do violão. Dica: 10 a 30 segundos bastam."));
+    const ui = el("div", { class:"rec-ui" });
+    sheet.append(ui);
+    let stream, rec, chunks = [], t0 = 0, timer, blob = null, url = null;
+    function cleanup(){ clearInterval(timer); if (stream) stream.getTracks().forEach(t => t.stop()); if (url) URL.revokeObjectURL(url); }
+    const origClose = close;
+    close = () => { cleanup(); origClose(); };
+
+    function showIdle(){
+      ui.innerHTML = "";
+      ui.append(el("button", { class:"btn block", onclick: start }, "● Iniciar gravação"));
+    }
+    function showRecording(){
+      ui.innerHTML = "";
+      const time = el("div", { class:"time live" }, el("span", { class:"recdot" }), "0:00");
+      ui.append(time, el("button", { class:"btn block ghost", onclick: stop }, "■ Parar"));
+      t0 = Date.now();
+      timer = setInterval(() => { time.lastChild.nodeValue = ""; time.childNodes[1].nodeValue = fmtTime((Date.now()-t0)/1000); }, 250);
+    }
+    function showPreview(){
+      ui.innerHTML = "";
+      url = URL.createObjectURL(blob);
+      ui.append(
+        el("audio", { class:"player", controls:true, src:url }),
+        el("div", { class:"actions" },
+          el("button", { class:"btn ghost", onclick: () => { blob = null; showIdle(); } }, "Regravar"),
+          el("button", { class:"btn", onclick: () => { const b = blob; close(); onUse(b); } }, "Usar este áudio")));
+    }
+    async function start(){
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio:true });
+      } catch(e){
+        ui.innerHTML = "";
+        ui.append(el("p", { class:"sub" }, "Não foi possível acessar o microfone. Verifique a permissão do navegador — ou envie um arquivo de áudio gravado em outro app."));
+        return;
+      }
+      const mime = pickMime();
+      if (mime === null){ ui.append(el("p", { class:"sub" }, "Este navegador não grava áudio. Use a opção de enviar arquivo.")); return; }
+      chunks = [];
+      rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      rec.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        blob = new Blob(chunks, { type: rec.mimeType || mime || "audio/webm" });
+        clearInterval(timer);
+        stream.getTracks().forEach(t => t.stop());
+        showPreview();
+      };
+      rec.start();
+      showRecording();
+    }
+    function stop(){ if (rec && rec.state !== "inactive") rec.stop(); }
+    showIdle();
+    sheet.append(el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: () => close() }, "Cancelar")));
+  });
+}
+
+/* widget de áudio dentro de um bloco do editor */
+function audioWidget(block, rerender){
+  const box = el("div", { style:"margin-top:10px" });
+  const has = block.audio || block._pendingBlob;
+  if (has){
+    const src = block._pendingBlob ? URL.createObjectURL(block._pendingBlob) : block.audio;
+    box.append(
+      el("audio", { class:"player", controls:true, preload:"none", src }),
+      el("div", { style:"display:flex;gap:8px;margin-top:8px" },
+        el("button", { class:"btn small ghost", onclick: () => openRecorder(b => { block._pendingBlob = b; block.audio = null; rerender(); }) }, "● Regravar"),
+        el("button", { class:"btn small ghost", onclick: () => { block.audio = null; delete block._pendingBlob; rerender(); } }, "Remover áudio")));
+  } else {
+    const file = el("input", { type:"file", accept:"audio/*", style:"display:none",
+      onchange: e => { const f = e.target.files[0]; if (f){ block._pendingBlob = f; block.audio = null; rerender(); } } });
+    box.append(el("div", { style:"display:flex;gap:8px;flex-wrap:wrap" },
+      el("button", { class:"btn small ghost", onclick: () => openRecorder(b => { block._pendingBlob = b; rerender(); }) }, "● Gravar áudio"),
+      el("label", { class:"btn small ghost", style:"cursor:pointer" }, "Enviar arquivo", file)));
+  }
+  return box;
+}
+
+/* ============================ EDITOR ============================ */
+const BLOCK_TYPES = [
+  { key:"cifra", label:"Cifra", desc:"Letra + acordes", icon:"♪" },
+  { key:"strum", label:"Batida", desc:"Ritmo da mão direita", icon:"↓↑" },
+  { key:"riff",  label:"Riff", desc:"Tablatura curta", icon:"𝄞" },
+  { key:"solo",  label:"Solo", desc:"Tablatura do solo", icon:"⚡" },
+  { key:"note",  label:"Anotação", desc:"Dica ou observação", icon:"✎" }
+];
+function newBlock(kind){
+  const base = { id: uuid(), title: "" };
+  if (kind === "cifra") return { ...base, type:"cifra", content:"" };
+  if (kind === "strum") return { ...base, type:"strum", pattern:["D","-","D","U","-","U","D","U"], bpm:"", audio:null };
+  if (kind === "riff")  return { ...base, type:"tab", subtype:"riff", content:"e|-----------------|\nB|-----------------|\nG|-----------------|\nD|-----------------|\nA|-----------------|\nE|-----------------|", audio:null };
+  if (kind === "solo")  return { ...base, type:"tab", subtype:"solo", content:"e|-----------------|\nB|-----------------|\nG|-----------------|\nD|-----------------|\nA|-----------------|\nE|-----------------|", audio:null };
+  return { ...base, type:"note", content:"" };
+}
+function insertAtCursor(ta, text){
+  const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+  ta.value = ta.value.slice(0, s) + text + ta.value.slice(e);
+  ta.focus();
+  ta.selectionStart = ta.selectionEnd = s + text.length;
+  ta.dispatchEvent(new Event("input"));
+}
+
+async function renderEditorView(id){
+  const v = $("#view");
+  v.innerHTML = "";
+  stopScroll(); $("#floatbar").innerHTML = "";
+  if (!isEditor()){ toast("Somente o professor pode editar.", "err"); location.hash = ""; return; }
+
+  let W;
+  const isNew = id === "nova";
+  if (isNew){
+    W = { id: uuid(), title:"", artist:"", song_key:"", capo:0, difficulty:"", tags:"", blocks:[] };
+  } else {
+    let s = null;
+    try { s = await DB().get(id); } catch(e){ toast(e.message, "err"); }
+    if (!s){ v.append(el("div", { class:"empty" }, "Música não encontrada.")); return; }
+    W = JSON.parse(JSON.stringify(s));
+  }
+  const preferFlat = () => (W.song_key||"").includes("b");
+
+  v.append(el("div", { class:"eyebrow" }, isNew ? "Nova música" : "Editando"));
+  v.append(el("h1", { class:"page" }, isNew ? "Adicionar música" : W.title || "Editar música"));
+  v.append(el("p", { class:"sub", style:"margin-bottom:16px" }, "Monte a música em seções, na ordem em que o aluno vai tocar. Nada aparece para os alunos antes de você salvar."));
+
+  /* --- dados gerais --- */
+  const tTitle = el("input", { class:"input", value:W.title, placeholder:"Ex.: Nome da música", oninput:e => W.title = e.target.value });
+  const tArtist = el("input", { class:"input", value:W.artist||"", placeholder:"Ex.: Artista / banda", oninput:e => W.artist = e.target.value });
+  const tKey = el("input", { class:"input", value:W.song_key||"", placeholder:"Ex.: G, Am, Bb", list:"keys", oninput:e => W.song_key = e.target.value.trim() });
+  const tCapo = el("input", { class:"input", type:"number", min:0, max:12, value:W.capo||0, oninput:e => W.capo = parseInt(e.target.value||"0",10) });
+  const tDiff = el("select", { class:"input", onchange:e => W.difficulty = e.target.value },
+    el("option", { value:"" }, "Dificuldade…"),
+    ...["iniciante","intermediário","avançado"].map(d => el("option", { value:d, selected: W.difficulty === d }, d)));
+  v.append(
+    el("datalist", { id:"keys" }, ...["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B","Am","Bm","Cm","Dm","Em","Fm","Gm"].map(k => el("option", { value:k }))),
+    el("div", { class:"field" }, el("label", {}, "Título da música *"), tTitle),
+    el("div", { class:"field" }, el("label", {}, "Artista"), tArtist),
+    el("div", { class:"row3" },
+      el("div", { class:"field" }, el("label", {}, "Tom"), tKey),
+      el("div", { class:"field" }, el("label", {}, "Capotraste"), tCapo),
+      el("div", { class:"field" }, el("label", {}, "Nível"), tDiff)),
+    el("hr", { class:"string-rule" }));
+
+  /* --- blocos --- */
+  const blocksWrap = el("div");
+  v.append(blocksWrap);
+
+  function blockEditor(b, idx){
+    const card = el("div", { class:"edblock" });
+    const tag = b.type === "tab" ? (b.subtype === "solo" ? "Solo" : "Riff") : ({ cifra:"Cifra", strum:"Batida", note:"Anotação" }[b.type] || "Seção");
+    card.append(el("div", { class:"edhead" },
+      el("span", { class:"tag" }, tag),
+      el("button", { class:"mv", "aria-label":"Mover para cima", disabled: idx === 0, onclick: () => { const t = W.blocks[idx-1]; W.blocks[idx-1] = b; W.blocks[idx] = t; renderBlocks(); } }, "↑"),
+      el("button", { class:"mv", "aria-label":"Mover para baixo", disabled: idx === W.blocks.length-1, onclick: () => { const t = W.blocks[idx+1]; W.blocks[idx+1] = b; W.blocks[idx] = t; renderBlocks(); } }, "↓"),
+      el("button", { class:"mv del", "aria-label":"Remover seção", onclick: async () => {
+        if (await openConfirm("Remover esta seção?", "“" + (b.title || tag) + "” será removida da música.", "Remover", true)){
+          W.blocks.splice(idx,1); renderBlocks();
+        }
+      } }, "✕")));
+    card.append(el("div", { class:"field" },
+      el("label", {}, "Nome da seção"),
+      el("input", { class:"input", value:b.title||"", placeholder: b.type === "strum" ? "Ex.: Batida principal, Batida do refrão" : "Ex.: Intro, Verso 1, Refrão",
+        oninput:e => b.title = e.target.value })));
+
+    if (b.type === "cifra"){
+      const ta = el("textarea", { class:"input", rows:8, placeholder:"Escreva a letra e toque nos acordes abaixo para inseri-los.\nEx.: [G]Toda manhã o sol [D]chega devagar",
+        oninput:e => { b.content = e.target.value; if (prev.style.display !== "none") prevBody.innerHTML = renderCifraHTML(b.content, 0, preferFlat()); } });
+      ta.value = b.content || "";
+      // paleta de acordes
+      const quick = ["C","D","Dm","E","Em","F","G","A","Am","B7"];
+      const pal = el("div", { class:"palette" },
+        ...quick.map(c => el("button", { class:"pc", type:"button", onclick:() => insertAtCursor(ta, "["+c+"]") }, c)));
+      const nRoot = el("select", { class:"input", style:"width:auto;padding:8px 10px" }, ...["C","C#","Db","D","D#","Eb","E","F","F#","Gb","G","G#","Ab","A","A#","Bb","B"].map(n => el("option",{},n)));
+      const nQual = el("select", { class:"input", style:"width:auto;padding:8px 10px" },
+        ...[["","maior"],["m","menor"],["7","7"],["m7","m7"],["maj7","7M (maj7)"],["sus4","sus4"],["sus2","sus2"]].map(([v,l]) => el("option",{value:v},l)));
+      const builder = el("div", { style:"display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:10px" },
+        el("span", { style:"font-size:12.5px;color:var(--muted)" }, "Outro acorde:"), nRoot, nQual,
+        el("button", { class:"btn small ghost", type:"button", onclick:() => insertAtCursor(ta, "[" + nRoot.value + nQual.value + "]") }, "Inserir"));
+      const prevBody = el("div", { class:"cifra" });
+      const prev = el("div", { style:"display:none;border-top:1px dashed var(--line);margin-top:10px;padding-top:10px" },
+        el("div", { class:"eyebrow" }, "Como o aluno verá"), prevBody);
+      const toggle = el("button", { class:"btn small ghost", type:"button", style:"margin-top:10px", onclick:() => {
+        const open = prev.style.display === "none";
+        prev.style.display = open ? "block" : "none";
+        toggle.textContent = open ? "Ocultar pré-visualização" : "Pré-visualizar";
+        if (open) prevBody.innerHTML = renderCifraHTML(b.content, 0, preferFlat());
+      } }, "Pré-visualizar");
+      card.append(pal, builder, ta, toggle, prev);
+    }
+    else if (b.type === "tab"){
+      const ta = el("textarea", { class:"input", rows:8, spellcheck:"false", oninput:e => b.content = e.target.value });
+      ta.value = b.content || "";
+      card.append(el("div", { class:"field" }, el("label", {}, "Tablatura (cordas e — E A D G B e — de baixo para cima)"), ta));
+      card.append(el("label", { style:"display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:4px 0 0" }, "Áudio do trecho (opcional)"));
+      card.append(audioWidget(b, renderBlocks));
+    }
+    else if (b.type === "strum"){
+      const sel = el("select", { class:"input", style:"width:auto;padding:8px 10px", onchange:e => {
+        const n = parseInt(e.target.value,10);
+        const p = b.pattern || [];
+        b.pattern = Array.from({ length:n }, (_,i) => p[i] || "-");
+        renderBlocks();
+      } }, ...[[8,"8 tempos (1 compasso)"],[16,"16 tempos (2 compassos)"],[4,"4 tempos (simples)"]].map(([val,l]) => el("option", { value:val, selected:(b.pattern||[]).length === val }, l)));
+      const beats = el("div", { class:"beats" });
+      const CYCLE = { "-":"D", D:"U", U:"X", X:"-" };
+      (b.pattern || []).forEach((val, i) => {
+        const slot = el("button", { class:"bslot " + (STRUM_CLS[val]||""), type:"button", "aria-label":"Tempo " + (i+1),
+          onclick:() => { b.pattern[i] = CYCLE[b.pattern[i]] || "D"; slot.className = "bslot " + (STRUM_CLS[b.pattern[i]]||""); slot.textContent = STRUM_SYM[b.pattern[i]]; } },
+          STRUM_SYM[val] || "·");
+        beats.append(slot);
+      });
+      const bpm = el("input", { class:"input", type:"number", min:30, max:240, value:b.bpm||"", placeholder:"bpm", style:"width:110px",
+        oninput:e => b.bpm = e.target.value });
+      card.append(
+        el("div", { class:"strum-editor" },
+          el("div", { style:"display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px" }, sel,
+            el("div", { style:"display:flex;align-items:center;gap:6px" }, el("span", { style:"font-size:12.5px;color:var(--muted)" }, "Andamento:"), bpm)),
+          beats,
+          el("div", { class:"hint" }, "Toque em cada tempo para alternar: · pausa → ↓ para baixo → ↑ para cima → × abafada")),
+        el("label", { style:"display:block;font-size:12.5px;font-weight:600;color:var(--muted);margin:12px 0 0" }, "Grave você tocando esta batida (recomendado)"),
+        audioWidget(b, renderBlocks));
+    }
+    else { // note
+      const ta = el("textarea", { class:"input", rows:3, style:"font-family:var(--body);white-space:pre-wrap", placeholder:"Ex.: Nessa parte, palheta mais leve; capriche na troca do F.",
+        oninput:e => b.content = e.target.value });
+      ta.value = b.content || "";
+      card.append(ta);
+    }
+    return card;
+  }
+
+  function renderBlocks(){
+    blocksWrap.innerHTML = "";
+    W.blocks.forEach((b, i) => blocksWrap.append(blockEditor(b, i)));
+    blocksWrap.append(
+      el("div", { class:"eyebrow", style:"margin-top:6px" }, "Adicionar seção"),
+      el("div", { class:"addmenu" },
+        ...BLOCK_TYPES.map(t => el("button", { type:"button", onclick:() => { W.blocks.push(newBlock(t.key)); renderBlocks(); scrollToAdd(); } },
+          el("span", { class:"big" }, t.icon), t.label, el("span", { style:"display:block;font-size:12px;color:var(--faint);font-weight:400" }, t.desc)))));
+  }
+  function scrollToAdd(){ setTimeout(() => { const cards = blocksWrap.querySelectorAll(".edblock"); if (cards.length && cards[cards.length-1].scrollIntoView) cards[cards.length-1].scrollIntoView({ behavior:"smooth", block:"center" }); }, 40); }
+  renderBlocks();
+
+  /* --- salvar / excluir --- */
+  const saveBtn = el("button", { class:"btn block", onclick: save }, isNew ? "Salvar música" : "Salvar alterações");
+  const foot = el("div", { style:"margin-top:22px;display:flex;flex-direction:column;gap:10px" }, saveBtn);
+  if (!isNew) foot.append(el("button", { class:"btn block danger", onclick: async () => {
+    if (await openConfirm("Excluir esta música?", "“" + W.title + "” sairá do caderno de todos os alunos. Essa ação não pode ser desfeita.", "Excluir música", true)){
+      try { await DB().remove(W.id); toast("Música excluída."); location.hash = ""; }
+      catch(e){ toast(e.message, "err"); }
+    }
+  } }, "Excluir música"));
+  v.append(el("hr", { class:"string-rule" }), foot);
+
+  async function save(){
+    if (!W.title.trim()){ toast("Dê um título à música.", "err"); tTitle.focus(); return; }
+    saveBtn.disabled = true; saveBtn.textContent = "Salvando…";
+    try {
+      for (const b of W.blocks){
+        if (b._pendingBlob){
+          if (S.remote){
+            const path = W.id + "/" + b.id + "-" + Date.now() + "." + extFromMime(b._pendingBlob.type);
+            saveBtn.textContent = "Enviando áudio…";
+            b.audio = await RemoteDB.uploadAudio(b._pendingBlob, path);
+          } else {
+            b.audio = await DemoDB.uploadAudio(b._pendingBlob);
+          }
+          delete b._pendingBlob;
+        }
+      }
+      const payload = {
+        id: W.id, title: W.title.trim(), artist: (W.artist||"").trim(),
+        song_key: (W.song_key||"").trim(), capo: W.capo || 0,
+        difficulty: W.difficulty || "", tags: (W.tags||"").trim(),
+        blocks: W.blocks.map(({ _pendingBlob, ...rest }) => rest),
+        updated_at: new Date().toISOString()
+      };
+      await DB().upsert(payload);
+      toast("Música salva!", "ok");
+      location.hash = "#/m/" + W.id;
+    } catch(e){
+      toast(e.message || "Não foi possível salvar.", "err");
+      saveBtn.disabled = false; saveBtn.textContent = "Salvar";
+    }
+  }
+}
+
+/* ============================ BACKUP ============================ */
+async function exportData(){
+  try {
+    let full;
+    if (S.remote) full = await SB.rest("songs?select=*&order=title.asc");
+    else full = DemoDB._all();
+    const blob = new Blob([JSON.stringify({ app:"caderno-de-cifras", version:CONFIG.VERSION, exported_at:new Date().toISOString(), songs: full }, null, 2)], { type:"application/json" });
+    const a = el("a", { href: URL.createObjectURL(blob), download: "caderno-cifras-backup-" + new Date().toISOString().slice(0,10) + ".json" });
+    document.body.append(a); a.click(); a.remove();
+    toast("Backup exportado.", "ok");
+  } catch(e){ toast(e.message, "err"); }
+}
+async function importData(file){
+  try {
+    const j = JSON.parse(await file.text());
+    const songs = Array.isArray(j) ? j : j.songs;
+    if (!Array.isArray(songs)) throw new Error("Arquivo inválido.");
+    if (!(await openConfirm("Importar backup?", songs.length + " música(s) serão adicionadas/atualizadas no caderno.", "Importar"))) return;
+    for (const s of songs){ if (s && s.id && s.title) await DB().upsert(s); }
+    toast("Backup importado!", "ok");
+    S.songs = []; route();
+  } catch(e){ toast("Falha na importação: " + e.message, "err"); }
+}
+</script>
+<script>
+/* ============================ ROTEADOR / INICIALIZAÇÃO ============================ */
+function route(){
+  const h = location.hash.replace(/^#\/?/, "");
+  const [seg, id] = h.split("/");
+  if (seg === "m" && id) S.route = { view:"song", id };
+  else if (seg === "e" && id) S.route = { view:"editor", id };
+  else S.route = { view:"home" };
+  renderTopbar();
+  window.scrollTo(0, 0);
+  if (S.route.view === "song") renderSong(S.route.id);
+  else if (S.route.view === "editor") renderEditorView(S.route.id);
+  else renderHome();
+}
+function handleRecoveryHash(){
+  if (!S.remote) return false;
+  const rec = recoveryParams();
+  if (!rec) return false;
+  history.replaceState(null, "", location.pathname + location.search);
+  openPasswordReset(rec);
+  return true;
+}
+window.addEventListener("hashchange", () => { if (!handleRecoveryHash()) route(); });
+
+(function init(){
+  document.title = CONFIG.APP_NAME;
+  const px = parseInt(safeStore.get("cifra_size") || "15", 10);
+  document.documentElement.style.setProperty("--cifra-size", px + "px");
+  if (S.remote) SB.loadSession();
+  const rec = S.remote ? recoveryParams() : null;
+  if (rec) history.replaceState(null, "", location.pathname + location.search);
+  route();
+  loadConfig();
+  if (rec) openPasswordReset(rec);   // aba nova (caso mais comum)
+  if ("serviceWorker" in navigator && location.protocol === "https:"){
+    try { navigator.serviceWorker.register("sw.js").catch(() => {}); } catch(e){}
+  }
+})();
+</script>
+</body>
+</html>
