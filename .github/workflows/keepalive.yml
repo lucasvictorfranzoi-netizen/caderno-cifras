@@ -1,0 +1,38 @@
+name: Manter Supabase ativo
+   on:
+     schedule:
+       - cron: "17 3 */3 * *"
+     workflow_dispatch: {}
+
+   permissions:
+     contents: write
+
+   jobs:
+     ping:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+
+         - name: Ping no banco (mantem o projeto acordado)
+           run: |
+             curl -fsS "${{ vars.SUPABASE_URL }}/rest/v1/songs?select=id&limit=1" \
+               -H "apikey: ${{ vars.SUPABASE_ANON_KEY }}" \
+               -H "Authorization: Bearer ${{ vars.SUPABASE_ANON_KEY }}" \
+               -o /dev/null
+             echo "Supabase respondeu."
+
+         - name: Batimento no repositorio (mantem o cron vivo)
+           run: |
+             AGORA=$(date -u +%s)
+             ULTIMO=$(git log -1 --format=%ct -- .keepalive 2>/dev/null || echo 0)
+             IDADE=$(( (AGORA - ULTIMO) / 86400 ))
+             if [ "$IDADE" -ge 20 ] || [ "$ULTIMO" = "0" ]; then
+               date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+               git config user.name "keepalive-bot"
+               git config user.email "actions@users.noreply.github.com"
+               git add .keepalive
+               git commit -m "chore: batimento de atividade"
+               git push
+             else
+               echo "Ultimo batimento ha ${IDADE} dia(s) - nada a fazer."
+             fi
