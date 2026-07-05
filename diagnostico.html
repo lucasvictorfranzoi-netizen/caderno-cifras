@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src https://*.supabase.co; img-src 'self' data:; object-src 'none'; base-uri 'none'">
+<title>Diagnóstico — Caderno de Cifras</title>
+<style>
+  :root{ --bg:#171310; --card:#211b16; --brass:#d9a441; --brass2:#f0c46a; --ivory:#f3ead9; --muted:#a9a08f; --ok:#5fbf7f; --err:#e5736b; --line:#3a3128; }
+  *{ box-sizing:border-box; }
+  body{ margin:0; background:var(--bg); color:var(--ivory); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; line-height:1.5; padding:18px; }
+  .wrap{ max-width:620px; margin:0 auto; }
+  h1{ font-size:22px; margin:6px 0 2px; }
+  .sub{ color:var(--muted); font-size:14px; margin-bottom:18px; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; margin-bottom:14px; }
+  label{ display:block; font-size:13px; color:var(--muted); margin:10px 0 4px; }
+  input{ width:100%; padding:10px 12px; border-radius:9px; border:1px solid var(--line); background:#1a1510; color:var(--ivory); font-size:14px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
+  input:focus{ outline:none; border-color:var(--brass); }
+  .btn{ display:inline-block; width:100%; margin-top:14px; padding:12px 16px; border:none; border-radius:10px; background:var(--brass); color:#20180c; font-size:15px; font-weight:700; cursor:pointer; }
+  .btn:disabled{ opacity:.6; cursor:default; }
+  .btn.ghost{ background:transparent; color:var(--brass2); border:1px solid var(--line); }
+  .hint{ font-size:12.5px; color:var(--muted); margin-top:8px; }
+  .row{ display:flex; gap:10px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--line); }
+  .row:last-child{ border-bottom:none; }
+  .ic{ flex:0 0 22px; font-size:17px; text-align:center; line-height:1.4; }
+  .rtxt{ flex:1; }
+  .rtitle{ font-size:14.5px; font-weight:600; }
+  .rdetail{ font-size:12.5px; color:var(--muted); margin-top:2px; }
+  .pending{ color:var(--muted); }
+  .ok{ color:var(--ok); } .err{ color:var(--err); }
+  .summary{ text-align:center; padding:16px; border-radius:12px; font-weight:700; font-size:16px; margin-top:4px; }
+  .summary.good{ background:rgba(95,191,127,.12); color:var(--ok); border:1px solid rgba(95,191,127,.35); }
+  .summary.bad{ background:rgba(229,115,107,.12); color:var(--err); border:1px solid rgba(229,115,107,.35); }
+  .legend{ font-size:12.5px; color:var(--muted); margin-top:12px; }
+  code{ font-family:ui-monospace,Menlo,monospace; background:#1a1510; padding:1px 5px; border-radius:5px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🩺 Diagnóstico do Caderno</h1>
+  <div class="sub">Roda testes ao vivo contra o seu Supabase e mostra, item a item, se está tudo funcionando.</div>
+
+  <div class="card">
+    <label>URL do projeto (SUPABASE_URL)</label>
+    <input id="url" placeholder="https://xxxxx.supabase.co" autocomplete="off" spellcheck="false">
+    <label>Chave pública (a mesma do index.html — publishable ou anon)</label>
+    <input id="key" placeholder="sb_publishable_... ou eyJ..." autocomplete="off" spellcheck="false">
+    <div class="hint">São os mesmos dois valores que você colocou no <code>CONFIG</code> do <code>index.html</code>. Ficam salvos só neste navegador.</div>
+
+    <label style="margin-top:16px">Login do professor — opcional (testa entrar + permissão de editar)</label>
+    <input id="email" placeholder="e-mail do professor (opcional)" autocomplete="off" spellcheck="false">
+    <input id="pass" type="password" placeholder="senha (opcional)" autocomplete="off" style="margin-top:8px">
+    <div class="hint">Se preencher, o teste faz login e confirma que este e-mail pode salvar músicas. Não altera nenhum dado.</div>
+
+    <button class="btn" id="run">Rodar testes</button>
+  </div>
+
+  <div id="results"></div>
+  <div id="summaryBox"></div>
+
+  <div class="legend">
+    Este diagnóstico verifica: conexão, leitura pública (alunos), configuração, proteção da lista de editores,
+    <b>bloqueio de escrita para visitantes</b> (segurança), autenticação e armazenamento de áudios. Nenhum teste cria ou apaga dados.
+  </div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const results = $("results");
+
+// persistência local dos campos
+for (const f of ["url","key","email"]) {
+  try { $(f).value = localStorage.getItem("diag_"+f) || ""; } catch(e){}
+  $(f).addEventListener("input", () => { try { localStorage.setItem("diag_"+f, $(f).value); } catch(e){} });
+}
+
+function addRow(title){
+  const row = document.createElement("div");
+  row.className = "row";
+  row.innerHTML = '<div class="ic pending">⏳</div><div class="rtxt"><div class="rtitle"></div><div class="rdetail pending">testando…</div></div>';
+  row.querySelector(".rtitle").textContent = title;
+  results.appendChild(row);
+  return {
+    ok: (msg) => { row.querySelector(".ic").className = "ic ok"; row.querySelector(".ic").textContent = "✓"; const d = row.querySelector(".rdetail"); d.className = "rdetail"; d.textContent = msg; },
+    err: (msg) => { row.querySelector(".ic").className = "ic err"; row.querySelector(".ic").textContent = "✗"; const d = row.querySelector(".rdetail"); d.className = "rdetail err"; d.textContent = msg; },
+    warn:(msg) => { row.querySelector(".ic").className = "ic"; row.querySelector(".ic").textContent = "⚠️"; const d = row.querySelector(".rdetail"); d.className = "rdetail"; d.textContent = msg; }
+  };
+}
+
+async function req(method, url, key, opts={}){
+  const headers = Object.assign({ "apikey": key, "Authorization": "Bearer " + (opts.token || key) }, opts.headers || {});
+  const r = await fetch(url, { method, headers, body: opts.body });
+  let data = null; try { data = await r.json(); } catch(e){}
+  return { status: r.status, ok: r.ok, data };
+}
+
+let passed = 0, failed = 0, critical = false;
+
+async function run(){
+  results.innerHTML = ""; $("summaryBox").innerHTML = ""; passed = 0; failed = 0; critical = false;
+  const base = $("url").value.trim().replace(/\/+$/,"");
+  const key = $("key").value.trim();
+  const btn = $("run"); btn.disabled = true; btn.textContent = "Rodando…";
+
+  if (!base || !key){ addRow("Configuração").err("Preencha a URL e a chave primeiro."); btn.disabled = false; btn.textContent = "Rodar testes"; return; }
+  if (!/^https:\/\/.+\.supabase\.co$/.test(base)){ addRow("Formato da URL").warn("A URL não parece a do Supabase (esperado https://xxxxx.supabase.co). Vou testar mesmo assim."); }
+
+  // 1) Conexão + leitura pública das músicas
+  let r1 = addRow("Conexão e leitura pública das músicas");
+  try {
+    const r = await req("GET", base + "/rest/v1/songs?select=id&limit=1", key);
+    if (r.ok && Array.isArray(r.data)) { r1.ok("Conectado. Os alunos conseguem ler as músicas (leitura pública OK)."); passed++; }
+    else if (r.status === 401) { r1.err("Chave recusada (401). Confira se a chave pública está correta."); failed++; }
+    else { r1.err("Resposta inesperada (HTTP " + r.status + ")."); failed++; }
+  } catch(e){ r1.err("Não foi possível conectar. Verifique a URL, sua internet e se o projeto não está pausado."); failed++; }
+
+  // 2) Configuração do app
+  let r2 = addRow("Configuração do app (nome do caderno/professor)");
+  try {
+    const r = await req("GET", base + "/rest/v1/app_config?select=app_name,professor_name&id=eq.1", key);
+    if (r.ok && Array.isArray(r.data) && r.data[0]) { r2.ok('Lida. Nome atual: "' + (r.data[0].app_name||"—") + '".'); passed++; }
+    else if (r.ok && Array.isArray(r.data)) { r2.warn("Tabela existe mas sem a linha id=1. Rode o passo do SQL de novo (parte que insere em app_config)."); }
+    else { r2.err("Não consegui ler app_config (HTTP " + r.status + "). O SQL foi rodado por completo?"); failed++; }
+  } catch(e){ r2.err("Falha ao consultar a configuração."); failed++; }
+
+  // 3) Lista de editores protegida
+  let r3 = addRow("Lista de editores protegida (visitante não enxerga)");
+  try {
+    const r = await req("GET", base + "/rest/v1/editores?select=email", key);
+    if (Array.isArray(r.data) && r.data.length === 0) { r3.ok("Protegida: um visitante não consegue ler os e-mails de editor."); passed++; }
+    else if (Array.isArray(r.data) && r.data.length > 0) { r3.err("ATENÇÃO: a lista de editores está exposta a visitantes. Confira as regras (RLS) da tabela editores."); failed++; critical = true; }
+    else if (r.status === 401 || r.status === 403 || r.status === 404) { r3.ok("Protegida (o Supabase nem devolve os dados a visitantes)."); passed++; }
+    else { r3.warn("Resposta inesperada (HTTP " + r.status + "), mas sem vazamento de dados."); }
+  } catch(e){ r3.warn("Não deu para checar a tabela editores agora."); }
+
+  // 4) Escrita bloqueada para visitantes (segurança principal)
+  let r4 = addRow("Escrita bloqueada para visitantes (segurança)");
+  try {
+    const r = await req("POST", base + "/rest/v1/songs", key, {
+      headers: { "Content-Type": "application/json", "Prefer": "return=minimal" },
+      body: JSON.stringify([{ title: "__teste_diagnostico__", blocks: [] }])
+    });
+    if (r.status === 401 || r.status === 403) { r4.ok("Bloqueada corretamente (HTTP " + r.status + "): só o professor logado escreve."); passed++; }
+    else if (r.ok || r.status === 201) { r4.err("FALHA GRAVE: um visitante conseguiu escrever no banco! Revise as políticas RLS da tabela songs URGENTE."); failed++; critical = true; }
+    else { r4.warn("Resposta inesperada (HTTP " + r.status + ")."); }
+  } catch(e){ r4.warn("Não deu para testar a escrita agora."); }
+
+  // 5) Autenticação no ar
+  let r5 = addRow("Serviço de login funcionando");
+  try {
+    const r = await fetch(base + "/auth/v1/token?grant_type=password", {
+      method: "POST", headers: { "apikey": key, "Content-Type": "application/json" },
+      body: JSON.stringify({ email: "diagnostico_inexistente@example.com", password: "x" })
+    });
+    if (r.status === 400 || r.status === 401) { r5.ok("No ar: recusa credenciais inválidas, como esperado."); passed++; }
+    else if (r.status === 200) { r5.warn("Respondeu 200 a um login falso — inesperado, confira o Auth."); }
+    else { r5.warn("Resposta inesperada (HTTP " + r.status + ")."); }
+  } catch(e){ r5.err("Serviço de login não respondeu."); failed++; }
+
+  // 6) Armazenamento de áudios acessível
+  let r6 = addRow("Armazenamento de áudios acessível");
+  try {
+    const r = await fetch(base + "/storage/v1/object/public/audios/__diagnostico_ping__", { method: "GET", headers: { "apikey": key } });
+    // qualquer resposta HTTP (mesmo 400/404) significa que o endpoint de storage está de pé
+    if (r.status < 500) { r6.ok("Endpoint de áudios respondendo (as gravações das batidas vão funcionar)."); passed++; }
+    else { r6.warn("Storage respondeu HTTP " + r.status + "."); }
+  } catch(e){ r6.err("Não consegui falar com o armazenamento de áudios."); failed++; }
+
+  // 7) Login do professor (opcional) + permissão de editar
+  const email = $("email").value.trim(), pass = $("pass").value;
+  if (email && pass){
+    let r7 = addRow("Login do professor + permissão de editar");
+    try {
+      const login = await fetch(base + "/auth/v1/token?grant_type=password", {
+        method: "POST", headers: { "apikey": key, "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: pass })
+      });
+      const lj = await login.json().catch(()=>({}));
+      if (!login.ok || !lj.access_token){ r7.err("Login falhou: confira e-mail e senha (ou confirme o usuário no Supabase)."); failed++; }
+      else {
+        // dry-run: PATCH app_config com os MESMOS valores atuais → 2xx = é editor; 403 = não é editor
+        const cur = await req("GET", base + "/rest/v1/app_config?select=app_name,professor_name&id=eq.1", key, { token: lj.access_token });
+        const body = (Array.isArray(cur.data) && cur.data[0]) ? cur.data[0] : { app_name: "Caderno de Cifras", professor_name: "Professor" };
+        const patch = await fetch(base + "/rest/v1/app_config?id=eq.1", {
+          method: "PATCH",
+          headers: { "apikey": key, "Authorization": "Bearer " + lj.access_token, "Content-Type": "application/json", "Prefer": "return=minimal" },
+          body: JSON.stringify({ app_name: body.app_name, professor_name: body.professor_name })
+        });
+        if (patch.ok || patch.status === 204) { r7.ok("Login OK e este e-mail está autorizado a salvar músicas (é editor)."); passed++; }
+        else if (patch.status === 403) { r7.err("Logou, mas este e-mail NÃO está na lista de editores — não conseguirá salvar. Adicione-o na tabela editores."); failed++; }
+        else { r7.warn("Login OK; verificação de editor devolveu HTTP " + patch.status + "."); }
+      }
+    } catch(e){ r7.err("Falha ao testar o login do professor."); failed++; }
+  }
+
+  // Resumo
+  const box = $("summaryBox");
+  const div = document.createElement("div");
+  if (failed === 0){
+    div.className = "summary good";
+    div.textContent = "✓ Tudo funcionando! " + passed + " verificações passaram.";
+  } else {
+    div.className = "summary bad";
+    div.innerHTML = (critical ? "⚠️ Problema de SEGURANÇA encontrado. " : "") + failed + " verificação(ões) falharam e " + passed + " passaram. Veja os ✗ acima.";
+  }
+  box.appendChild(div);
+  btn.disabled = false; btn.textContent = "Rodar testes de novo";
+}
+
+$("run").addEventListener("click", run);
+</script>
+</body>
+</html>
