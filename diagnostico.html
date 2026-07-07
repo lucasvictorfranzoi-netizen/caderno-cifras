@@ -47,7 +47,7 @@
     <input id="key" placeholder="sb_publishable_... ou eyJ..." autocomplete="off" spellcheck="false">
     <div class="hint">São os mesmos dois valores que você colocou no <code>CONFIG</code> do <code>index.html</code>. Ficam salvos só neste navegador.</div>
 
-    <label style="margin-top:16px">Login do professor — opcional (testa entrar + permissão de editar)</label>
+    <label style="margin-top:16px">Login do professor — opcional (e-mail real do professor)</label>
     <input id="email" placeholder="e-mail do professor (opcional)" autocomplete="off" spellcheck="false">
     <input id="pass" type="password" placeholder="senha (opcional)" autocomplete="off" style="margin-top:8px">
     <div class="hint">Se preencher, o teste faz login e confirma que este e-mail pode salvar músicas. Não altera nenhum dado.</div>
@@ -59,7 +59,7 @@
   <div id="summaryBox"></div>
 
   <div class="legend">
-    Este diagnóstico verifica: conexão, leitura pública (alunos), configuração, proteção da lista de editores,
+    Este diagnóstico verifica: conexão, leitura protegida (só membros), configuração, proteção da lista de editores,
     <b>bloqueio de escrita para visitantes</b> (segurança), autenticação e armazenamento de áudios. Nenhum teste cria ou apaga dados.
   </div>
 </div>
@@ -106,10 +106,11 @@ async function run(){
   if (!/^https:\/\/.+\.supabase\.co$/.test(base)){ addRow("Formato da URL").warn("A URL não parece a do Supabase (esperado https://xxxxx.supabase.co). Vou testar mesmo assim."); }
 
   // 1) Conexão + leitura pública das músicas
-  let r1 = addRow("Conexão e leitura pública das músicas");
+  let r1 = addRow("Conexão e leitura protegida das músicas");
   try {
     const r = await req("GET", base + "/rest/v1/songs?select=id&limit=1", key);
-    if (r.ok && Array.isArray(r.data)) { r1.ok("Conectado. Os alunos conseguem ler as músicas (leitura pública OK)."); passed++; }
+    if (r.ok && Array.isArray(r.data) && r.data.length === 0) { r1.ok("Conectado. Leitura protegida: um visitante sem login não vê as músicas."); passed++; }
+    else if (r.ok && Array.isArray(r.data) && r.data.length > 0) { r1.err("ATENÇÃO: as músicas aparecem SEM login. Rode o supabase-setup.sql atualizado (leitura só para membros)."); failed++; critical = true; }
     else if (r.status === 401) { r1.err("Chave recusada (401). Confira se a chave pública está correta."); failed++; }
     else { r1.err("Resposta inesperada (HTTP " + r.status + ")."); failed++; }
   } catch(e){ r1.err("Não foi possível conectar. Verifique a URL, sua internet e se o projeto não está pausado."); failed++; }
@@ -178,6 +179,11 @@ async function run(){
       const lj = await login.json().catch(()=>({}));
       if (!login.ok || !lj.access_token){ r7.err("Login falhou: confira e-mail e senha (ou confirme o usuário no Supabase)."); failed++; }
       else {
+        try {
+          const pr = await fetch(base + "/rest/v1/rpc/meu_papel", { method:"POST", headers:{ "apikey":key, "Authorization":"Bearer "+lj.access_token, "Content-Type":"application/json" } });
+          const pv = await pr.json();
+          if (pv && pv !== "professor" && pv !== "aluno") r7.warn("Login OK, mas o papel veio '" + pv + "'. Confira se este e-mail está na tabela editores.");
+        } catch(e){}
         // dry-run: PATCH app_config com os MESMOS valores atuais → 2xx = é editor; 403 = não é editor
         const cur = await req("GET", base + "/rest/v1/app_config?select=app_name,professor_name&id=eq.1", key, { token: lj.access_token });
         const body = (Array.isArray(cur.data) && cur.data[0]) ? cur.data[0] : { app_name: "Caderno de Cifras", professor_name: "Professor" };
@@ -186,7 +192,7 @@ async function run(){
           headers: { "apikey": key, "Authorization": "Bearer " + lj.access_token, "Content-Type": "application/json", "Prefer": "return=minimal" },
           body: JSON.stringify({ app_name: body.app_name, professor_name: body.professor_name })
         });
-        if (patch.ok || patch.status === 204) { r7.ok("Login OK e este e-mail está autorizado a salvar músicas (é editor)."); passed++; }
+        if (patch.ok || patch.status === 204) { r7.ok("Login OK e este e-mail é o professor (pode salvar músicas e convidar alunos)."); passed++; }
         else if (patch.status === 403) { r7.err("Logou, mas este e-mail NÃO está na lista de editores — não conseguirá salvar. Adicione-o na tabela editores."); failed++; }
         else { r7.warn("Login OK; verificação de editor devolveu HTTP " + patch.status + "."); }
       }

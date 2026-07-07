@@ -454,11 +454,11 @@ footer.app button{color:var(--faint);text-decoration:underline dotted;font-size:
       e cole abaixo a URL e a anon key (Settings → API).
 ===================================================================== */
 const CONFIG = {
-  SUPABASE_URL: "https://sdpkstoqadxsafnlsglb.supabase.co",        // ex.: "https://xxxxx.supabase.co" (Settings → API)
-  SUPABASE_ANON_KEY: "sb_publishable_J13q-ZXpvFh_I_befvTKvw_r3AvCcUK",   // chave "anon public" — é pública por design: só concede o que as regras RLS permitem (leitura)
+  SUPABASE_URL: "",        // ex.: "https://xxxxx.supabase.co" (Settings → API)
+  SUPABASE_ANON_KEY: "",   // chave "anon public" — é pública por design: só concede o que as regras RLS permitem (leitura)
   APP_NAME: "Caderno de Cifras",        // padrão; o professor pode trocar pelo app (Personalizar)
   PROFESSOR_NAME: "Professor",
-  VERSION: "0.4.0"
+  VERSION: "0.5.0"
 };
 </script>
 
@@ -516,9 +516,11 @@ const S = {
   songs: [],            // índice leve [{id,title,artist,difficulty,song_key,updated_at}]
   session: null,        // sessão do professor (remote) — em demo, sempre "logado"
   route: null,
+  role: null,           // "professor" | "aluno" | "nenhum" (definido após login via meu_papel)
   scroller: { active:false, speed:1, raf:0 }
 };
-const isEditor = () => S.remote ? !!S.session : true;
+const isLoggedIn = () => S.remote ? !!S.session : true;
+const isEditor   = () => S.remote ? (S.role === "professor") : true;
 
 /* ============================ CAMADA DE DADOS ============================ */
 /* ---- Modo demonstração: safeStore ---- */
@@ -581,7 +583,32 @@ const SB = {
     this.saveSession(j);
     return j.user;
   },
-  logout(){ this.saveSession(null); },
+  async signup(email, password, code, nome){
+    const r = await fetch(this.base + "/auth/v1/signup", {
+      method:"POST", headers:{ "apikey":this.key, "Content-Type":"application/json" },
+      body: JSON.stringify({ email, password, data: { convite: code, nome: nome || "" } })
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok){
+      const raw = (j.msg || j.error_description || j.message || "").toLowerCase();
+      if (raw.includes("registered") || raw.includes("already")) throw new Error("Já existe uma conta com esse e-mail. Tente entrar.");
+      // o gatilho do banco bloqueia convites inválidos; a mensagem exata do Postgres nem sempre volta
+      throw new Error("Não foi possível criar a conta. O convite pode ser inválido ou já ter sido usado — peça um novo link ao professor.");
+    }
+    if (j.access_token){ this.saveSession(j); return { session:true }; }
+    // e-mail de confirmação ligado: conta criada, mas precisa confirmar
+    return { session:false };
+  },
+  async loadRole(){
+    if (!this.tokens){ S.role = null; return null; }
+    try {
+      const r = await fetch(this.base + "/rest/v1/rpc/meu_papel", { method:"POST", headers: await this.headers() });
+      const v = await r.json();
+      S.role = (typeof v === "string") ? v : (Array.isArray(v) ? v[0] : null);
+    } catch(e){ S.role = null; }
+    return S.role;
+  },
+  logout(){ this.saveSession(null); S.role = null; },
   async recover(email){
     const r = await fetch(this.base + "/auth/v1/recover", {
       method:"POST", headers:{ "apikey":this.key, "Content-Type":"application/json" },
@@ -610,12 +637,13 @@ const SB = {
     if (!r.ok){
       let msg = "Erro de comunicação com o servidor (" + r.status + ").";
       try { const j = await r.json(); msg = j.message || j.hint || msg; } catch(e){}
-      if (r.status === 401){ this.saveSession(null); msg = "Sua sessão expirou. Entre novamente na Área do professor."; }
-      if (r.status === 403) msg = "Sem permissão para editar: confira se este e-mail está na lista de editores (tabela editores no Supabase).";
+      if (r.status === 401){ this.saveSession(null); msg = "Sua sessão expirou. Entre novamente."; }
+      if (r.status === 403) msg = "Sem permissão para esta ação.";
       throw new Error(msg);
     }
     if (r.status === 204) return null;
-    return r.json();
+    const txt = await r.text();          // inserts com Prefer:return=minimal voltam 201 sem corpo
+    return txt ? JSON.parse(txt) : null;
   }
 };
 
@@ -961,10 +989,14 @@ function openMenu(){
     sheet.append(el("h2", {}, "Menu"));
     const list = el("div", { class:"menu-list" });
     if (S.remote && !S.session){
-      list.append(el("button", { onclick: () => { close(); openLogin(); } }, "🔑 Área do professor"));
+      list.append(el("button", { onclick: () => { close(); openLogin(); } }, "🔑 Entrar"));
+    }
+    if (S.remote && S.session){
+      list.append(el("button", { onclick: () => { close(); openPerfil(); } }, "👤 Perfil"));
+      list.append(el("button", { onclick: () => { close(); SB.logout(); toast("Você saiu."); location.hash = ""; route(); } }, "🚪 Sair", el("span", { class:"mut" }, S.session?.email || "")));
     }
     if (isEditor()){
-      if (S.remote) list.append(el("button", { onclick: () => { close(); SB.logout(); toast("Você saiu da área do professor."); route(); } }, "🚪 Sair da área do professor", el("span", { class:"mut" }, S.session?.email || "")));
+      if (S.remote) list.append(el("button", { onclick: () => { close(); openConvidar(); } }, "👥 Alunos com acesso"));
       list.append(el("button", { onclick: () => { close(); exportData(); } }, "⤓ Exportar backup (JSON)"));
       const inp = el("input", { type:"file", accept:"application/json", style:"display:none",
         onchange: e => { if (e.target.files[0]) importData(e.target.files[0]); close(); } });
@@ -982,7 +1014,7 @@ function openAbout(){
       el("h2", {}, CFG.app_name),
       el("p", { class:"sub" }, "Caderno de cifras das aulas de " + CFG.professor_name + ". Toda música salva pelo professor aparece na hora para os alunos."),
       el("p", { class:"sub", style:"margin-top:10px" }, S.remote
-        ? "Versão " + CONFIG.VERSION + " · conectado · alunos têm acesso somente de leitura (garantido no servidor)."
+        ? "Versão " + CONFIG.VERSION + " · conectado · acesso por convite. Alunos entram com e-mail e senha e têm acesso somente de leitura (garantido no servidor)."
         : "Versão " + CONFIG.VERSION + " · modo demonstração · os dados ficam apenas neste aparelho."),
       el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar"))
     );
@@ -1024,10 +1056,11 @@ function openHelp(){
         li(S.remote
           ? "<b>Salvar música</b>: ela entra no ar <b>na hora</b> para todos os alunos — não existe botão de publicar."
           : "<b>Salvar música</b>: no modo demonstração, ela fica só neste aparelho."),
-        li("Aluno novo? Mande o <b>link do caderno</b> uma vez e peça para usar <b>Adicionar à tela inicial</b> — vira aplicativo e atualiza sozinho."),
+        li("Aluno novo? Use <b>Menu → Convidar aluno</b>, gere o link e envie. Só quem recebe o link consegue criar conta."),
         li("De vez em quando, use <b>Menu → ⤓ Exportar backup</b> e guarde o arquivo por segurança."));
     } else {
       ol.append(
+        li("Entre com o <b>e-mail e senha</b> que você criou pelo link de convite do professor."),
         li("Use a <b>busca</b> para achar a música pelo nome ou artista."),
         li("Toque em qualquer <b>acorde dourado</b> para ver o desenho de como montar no braço."),
         li("Os botões <b>♭ e ♯</b> mudam o tom da música inteira; o do meio volta ao tom original."),
@@ -1050,8 +1083,9 @@ function openLogin(){
       btn.disabled = true; btn.textContent = "Entrando…";
       try {
         await SB.login(email.value.trim(), pass.value);
-        toast("Bem-vindo, professor!", "ok");
-        close(); route();
+        await SB.loadRole();
+        toast(S.role === "professor" ? "Bem-vindo, professor!" : "Bem-vindo!", "ok");
+        close(); location.hash = ""; route();
       } catch(err){
         toast(err.message, "err");
         btn.disabled = false; btn.textContent = "Entrar";
@@ -1066,8 +1100,8 @@ function openLogin(){
       catch(e){ toast(e.message, "err"); forgot.disabled = false; forgot.textContent = "Esqueci a senha"; }
     } }, "Esqueci a senha");
     sheet.append(
-      el("h2", {}, "Área do professor"),
-      el("p", { class:"sub", style:"margin-bottom:14px" }, "Somente o professor edita o caderno. Alunos não precisam de senha."),
+      el("h2", {}, "Entrar"),
+      el("p", { class:"sub", style:"margin-bottom:14px" }, "Entre com seu e-mail e senha."),
       el("div", { class:"field" }, el("label", {}, "E-mail"), email),
       el("div", { class:"field" }, el("label", {}, "Senha"), pass),
       btn, forgot
@@ -1628,14 +1662,210 @@ async function importData(file){
 </script>
 <script>
 /* ============================ ROTEADOR / INICIALIZAÇÃO ============================ */
+/* ====== Formatação ====== */
+function formatBRL(v){ if (v == null || v === "") return null; const n = Number(v); return isNaN(n) ? String(v) : "R$ " + n.toFixed(2).replace(".", ","); }
+
+/* ============================ BOAS-VINDAS / LOGIN (tela) ============================ */
+function renderWelcome(){
+  const v = $("#view"); v.innerHTML = ""; stopScroll(); $("#floatbar").innerHTML = "";
+  v.append(el("div", { class:"eyebrow" }, "Caderno de Cifras"));
+  v.append(el("h1", { class:"page" }, "Entrar"));
+  v.append(el("p", { class:"sub", style:"margin:-6px 0 18px" }, "As músicas das aulas de " + CFG.professor_name + "."));
+  const email = el("input", { class:"input", type:"email", autocomplete:"username", placeholder:"seu@email.com" });
+  const pass  = el("input", { class:"input", type:"password", autocomplete:"current-password", placeholder:"sua senha" });
+  const btn   = el("button", { class:"btn block", onclick: doLogin }, "Entrar");
+  async function doLogin(){
+    if (!email.value.trim()){ toast("Digite seu e-mail.", "err"); return; }
+    btn.disabled = true; btn.textContent = "Entrando…";
+    try {
+      await SB.login(email.value.trim(), pass.value);
+      await SB.loadRole();
+      toast(S.role === "professor" ? "Bem-vindo, professor!" : "Bem-vindo!", "ok");
+      location.hash = ""; route();
+    } catch(err){ toast(err.message, "err"); btn.disabled = false; btn.textContent = "Entrar"; }
+  }
+  pass.addEventListener("keydown", e => { if (e.key === "Enter") doLogin(); });
+  const forgot = el("button", { class:"btn small ghost", style:"margin-top:10px;width:100%", onclick: async () => {
+    const em = email.value.trim();
+    if (!em){ toast("Digite seu e-mail acima primeiro.", "err"); email.focus(); return; }
+    forgot.disabled = true; forgot.textContent = "Enviando…";
+    try { await SB.recover(em); toast("Enviamos um link de redefinição para " + em + ".", "ok"); }
+    catch(e){ toast(e.message, "err"); } finally { forgot.disabled = false; forgot.textContent = "Esqueci a senha"; }
+  } }, "Esqueci a senha");
+  v.append(el("div", { class:"field" }, el("label", {}, "E-mail"), email),
+           el("div", { class:"field" }, el("label", {}, "Senha"), pass),
+           btn, forgot,
+           el("hr", { class:"string-rule" }),
+           el("p", { class:"sub", html:"É aluno novo? Abra o <b>link de convite</b> que o professor enviou para criar sua conta." }));
+  setTimeout(() => email.focus(), 60);
+}
+
+/* ============================ CADASTRO POR CONVITE ============================ */
+function renderConvite(code){
+  const v = $("#view"); v.innerHTML = ""; stopScroll(); $("#floatbar").innerHTML = "";
+  if (!S.remote){ v.append(el("h1", { class:"page" }, "Indisponível"), el("p", { class:"sub" }, "O cadastro não funciona no modo demonstração.")); return; }
+  if (S.session){
+    v.append(el("div", { class:"eyebrow" }, "Convite"),
+      el("h1", { class:"page" }, "Você já está conectado"),
+      el("button", { class:"btn block", style:"margin-top:14px", onclick: () => { location.hash = ""; route(); } }, "Ir para as músicas"));
+    return;
+  }
+  v.append(el("div", { class:"eyebrow" }, "Convite do professor"));
+  v.append(el("h1", { class:"page" }, "Criar minha conta"));
+  v.append(el("p", { class:"sub", style:"margin:-6px 0 18px" }, "Você foi convidado para o caderno de " + CFG.professor_name + "."));
+  const nome = el("input", { class:"input", type:"text", autocomplete:"nickname", placeholder:"como você quer ser chamado", maxlength:40 });
+  const email = el("input", { class:"input", type:"email", autocomplete:"email", placeholder:"seu@email.com" });
+  const p1 = el("input", { class:"input", type:"password", autocomplete:"new-password", placeholder:"crie uma senha (mín. 6 caracteres)" });
+  const p2 = el("input", { class:"input", type:"password", autocomplete:"new-password", placeholder:"repita a senha" });
+  const btn = el("button", { class:"btn block", onclick: doSignup }, "Criar minha conta");
+  async function doSignup(){
+    const nm = nome.value.trim(), em = email.value.trim();
+    if (nm.length < 2){ toast("Escolha um nome de usuário (mín. 2 letras).", "err"); return; }
+    if (!em.includes("@")){ toast("Digite um e-mail válido.", "err"); return; }
+    if (p1.value.length < 6){ toast("A senha precisa de ao menos 6 caracteres.", "err"); return; }
+    if (p1.value !== p2.value){ toast("As senhas não conferem.", "err"); return; }
+    btn.disabled = true; btn.textContent = "Criando…";
+    try {
+      const res = await SB.signup(em, p1.value, code, nm);
+      if (res.session){
+        await SB.loadRole();
+        toast("Conta criada — bem-vindo, " + nm + "!", "ok");
+        history.replaceState(null, "", location.pathname);
+        location.hash = ""; route();
+      } else {
+        v.innerHTML = "";
+        v.append(el("div", { class:"eyebrow" }, "Quase lá"),
+          el("h1", { class:"page" }, "Confirme seu e-mail"),
+          el("p", { class:"sub" }, "Enviamos um link de confirmação para " + em + ". Abra-o e depois entre com seu e-mail e senha."),
+          el("button", { class:"btn block", style:"margin-top:14px", onclick: () => { location.hash = ""; SB.logout(); route(); } }, "Ir para o login"));
+      }
+    } catch(err){ toast(err.message, "err"); btn.disabled = false; btn.textContent = "Criar minha conta"; }
+  }
+  p2.addEventListener("keydown", e => { if (e.key === "Enter") doSignup(); });
+  v.append(el("div", { class:"field" }, el("label", {}, "Nome de usuário"), nome),
+           el("div", { class:"field" }, el("label", {}, "E-mail"), email),
+           el("div", { class:"field" }, el("label", {}, "Senha"), p1),
+           el("div", { class:"field" }, el("label", {}, "Repita a senha"), p2),
+           btn);
+  setTimeout(() => nome.focus(), 60);
+}
+
+/* ============================ ALUNOS COM ACESSO (professor) ============================ */
+function randomCode(){
+  const a = new Uint8Array(10);
+  if (crypto && crypto.getRandomValues) crypto.getRandomValues(a); else for (let i=0;i<a.length;i++) a[i]=Math.floor(Math.random()*256);
+  const abc = "abcdefghijkmnpqrstuvwxyz23456789";
+  return Array.from(a).map(x => abc[x % abc.length]).join("");
+}
+function openConvidar(){
+  openSheet((sheet, close) => {
+    sheet.append(el("h2", {}, "Alunos com acesso"),
+      el("p", { class:"sub", style:"margin-bottom:14px" }, "Gere um link para adicionar um aluno, edite a mensalidade e o vencimento de cada um, ou remova quem quiser. Só quem tem o link cria conta — o caderno não se espalha."));
+    const linkArea = el("div");
+    const gen = el("button", { class:"btn block", onclick: async () => {
+      gen.disabled = true; gen.textContent = "Gerando…";
+      try {
+        const code = randomCode();
+        await SB.rest("convites", { method:"POST", headers:{ "Prefer":"return=minimal" }, body: JSON.stringify([{ codigo: code }]) });
+        showLink(location.origin + location.pathname + "#/convite/" + code); loadLists();
+      } catch(e){ toast(e.message, "err"); }
+      gen.disabled = false; gen.textContent = "Gerar novo link de convite";
+    } }, "Gerar link de convite");
+    function showLink(link){
+      linkArea.innerHTML = "";
+      const inp = el("input", { class:"input", value: link, readonly:"readonly", style:"font-size:13px" });
+      const copy = el("button", { class:"btn small", style:"margin-top:8px;width:100%", onclick: async () => {
+        try { await navigator.clipboard.writeText(link); copy.textContent = "Copiado ✓"; setTimeout(() => copy.textContent = "Copiar link", 1500); }
+        catch(e){ inp.select(); try { document.execCommand("copy"); } catch(_){} }
+      } }, "Copiar link");
+      linkArea.append(el("p", { class:"sub", style:"margin:14px 0 6px" }, "Envie este link ao aluno:"), inp, copy);
+    }
+    const lists = el("div", { style:"margin-top:18px" });
+    async function loadLists(){
+      lists.innerHTML = "";
+      try {
+        const alunos = await SB.rest("alunos?select=email,nome,criado_em,mensalidade,vencimento&order=nome.asc");
+        const conv   = await SB.rest("convites?select=codigo,usado&usado=is.false&order=criado_em.desc");
+        lists.append(el("div", { class:"eyebrow", style:"margin-top:6px" }, "Alunos com acesso (" + alunos.length + ")"));
+        if (!alunos.length) lists.append(el("p", { class:"sub" }, "Nenhum aluno ainda."));
+        alunos.forEach(a => lists.append(alunoCard(a)));
+        lists.append(el("div", { class:"eyebrow", style:"margin-top:16px" }, "Convites pendentes (" + conv.length + ")"));
+        if (!conv.length) lists.append(el("p", { class:"sub" }, "Nenhum convite pendente."));
+        conv.forEach(c => lists.append(el("div", { style:"display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line-soft)" },
+          el("span", { style:"flex:1;font-size:14px" }, "Link " + c.codigo.slice(0,4) + "…"),
+          el("button", { class:"btn small ghost", onclick: async () => { await SB.rest("convites?codigo=eq." + encodeURIComponent(c.codigo), { method:"DELETE" }); loadLists(); } }, "Cancelar"))));
+      } catch(e){ lists.append(el("p", { class:"sub" }, "Não foi possível carregar as listas.")); }
+    }
+    function alunoCard(a){
+      const mens = el("input", { class:"input", type:"number", step:"0.01", min:"0", value: (a.mensalidade != null ? a.mensalidade : ""), placeholder:"ex.: 150.00" });
+      const venc = el("input", { class:"input", type:"date", value: (a.vencimento || "") });
+      const save = el("button", { class:"btn small", style:"margin-top:8px", onclick: async () => {
+        save.disabled = true; save.textContent = "Salvando…";
+        try {
+          await SB.rest("alunos?email=eq." + encodeURIComponent(a.email), { method:"PATCH", headers:{ "Prefer":"return=minimal" },
+            body: JSON.stringify({ mensalidade: (mens.value === "" ? null : Number(mens.value)), vencimento: (venc.value || null) }) });
+          toast("Dados atualizados.", "ok"); loadLists();
+        } catch(e){ toast(e.message, "err"); save.disabled = false; save.textContent = "Salvar"; }
+      } }, "Salvar");
+      const body = el("div", { hidden:true, style:"margin-top:10px" },
+        el("div", { class:"field" }, el("label", {}, "Valor da mensalidade (R$)"), mens),
+        el("div", { class:"field" }, el("label", {}, "Data de vencimento"), venc),
+        save);
+      const resumo = el("span", { style:"font-size:11.5px;color:var(--muted)" },
+        (a.mensalidade != null ? formatBRL(a.mensalidade) : "sem mensalidade") + (a.vencimento ? " · vence " + fmtDate(a.vencimento) : ""));
+      const head = el("div", { style:"display:flex;align-items:center;gap:8px" },
+        el("span", { style:"flex:1;font-weight:600" }, a.nome || "(sem nome)"),
+        el("button", { class:"btn small ghost", onclick: () => { body.hidden = !body.hidden; } }, "Editar"),
+        el("button", { class:"btn small ghost", onclick: async () => { if (confirm("Remover o acesso de " + (a.nome || "este aluno") + "?")){ await SB.rest("alunos?email=eq." + encodeURIComponent(a.email), { method:"DELETE" }); loadLists(); } } }, "Remover"));
+      return el("div", { style:"border:1px solid var(--line-soft);border-radius:10px;padding:10px 12px;margin-bottom:8px" },
+        head, el("div", { style:"margin-top:3px" }, resumo), body);
+    }
+    sheet.append(gen, linkArea, lists, el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar")));
+    loadLists();
+  });
+}
+
+/* ============================ PERFIL (aluno e professor) ============================ */
+function openPerfil(){
+  openSheet(async (sheet, close) => {
+    sheet.append(el("h2", {}, "Perfil"));
+    const email = (S.session && S.session.email) || "—";
+    const isProf = isEditor();
+    let row = null;
+    if (S.remote && email !== "—"){
+      try { const rows = await SB.rest("alunos?select=nome,criado_em,mensalidade,vencimento&email=eq." + encodeURIComponent(email)); row = rows && rows[0]; } catch(e){}
+    }
+    const nome = isProf ? CFG.professor_name : ((row && row.nome) || "—");
+    const entrada = (row && row.criado_em) || (S.session && S.session.created_at) || null;
+    const info = (label, value) => el("div", { style:"display:flex;justify-content:space-between;gap:12px;padding:11px 0;border-bottom:1px solid var(--line-soft)" },
+      el("span", { style:"color:var(--muted);font-size:14px" }, label),
+      el("span", { style:"font-weight:600;font-size:14px;text-align:right" }, value));
+    const wrap = el("div", {});
+    wrap.append(info("Nome de usuário", nome));
+    wrap.append(info("E-mail", email));
+    wrap.append(info("Papel", isProf ? "Professor" : "Aluno"));
+    wrap.append(info("Entrou em", entrada ? fmtDate(entrada) : "—"));
+    if (!isProf){
+      wrap.append(info("Mensalidade", (row && row.mensalidade != null) ? formatBRL(row.mensalidade) : "A definir"));
+      wrap.append(info("Vencimento", (row && row.vencimento) ? fmtDate(row.vencimento) : "A definir"));
+    }
+    sheet.append(wrap, el("div", { class:"actions" }, el("button", { class:"btn ghost", onclick: close }, "Fechar")));
+  });
+}
+
 function route(){
   const h = location.hash.replace(/^#\/?/, "");
   const [seg, id] = h.split("/");
-  if (seg === "m" && id) S.route = { view:"song", id };
+  if (seg === "convite" && id) S.route = { view:"convite", code:id };
+  else if (seg === "m" && id) S.route = { view:"song", id };
   else if (seg === "e" && id) S.route = { view:"editor", id };
   else S.route = { view:"home" };
   renderTopbar();
   window.scrollTo(0, 0);
+  // cadastro por convite: acessível sem login
+  if (S.route.view === "convite") return renderConvite(S.route.code);
+  // tudo o mais exige estar logado (leitura agora é só para membros)
+  if (S.remote && !S.session) return renderWelcome();
   if (S.route.view === "song") renderSong(S.route.id);
   else if (S.route.view === "editor") renderEditorView(S.route.id);
   else renderHome();
@@ -1650,13 +1880,14 @@ function handleRecoveryHash(){
 }
 window.addEventListener("hashchange", () => { if (!handleRecoveryHash()) route(); });
 
-(function init(){
+(async function init(){
   document.title = CONFIG.APP_NAME;
   const px = parseInt(safeStore.get("cifra_size") || "15", 10);
   document.documentElement.style.setProperty("--cifra-size", px + "px");
   if (S.remote) SB.loadSession();
   const rec = S.remote ? recoveryParams() : null;
   if (rec) history.replaceState(null, "", location.pathname + location.search);
+  if (S.remote && S.session) await SB.loadRole();   // saber se é professor antes de desenhar
   route();
   loadConfig();
   if (rec) openPasswordReset(rec);   // aba nova (caso mais comum)
